@@ -1,3 +1,5 @@
 .git
 .gitignore
 .assetsignore
+worker.js
+wrangler.jsonc

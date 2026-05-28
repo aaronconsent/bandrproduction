@@ -2,11 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bandrproduction",
   "compatibility_date": "2026-05-28",
+  "main": "worker.js",
   "observability": {
     "enabled": true
   },
   "assets": {
-    "directory": "."
+    "directory": ".",
+    "binding": "ASSETS"
   },
   "compatibility_flags": [
     "nodejs_compat"
