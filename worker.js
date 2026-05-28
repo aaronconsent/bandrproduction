@@ -8,6 +8,7 @@
 // Optional (sensible defaults below):
 //   QUOTE_TO    — where leads are delivered (default info@bandrproduction.com)
 //   QUOTE_FROM  — verified Resend sender (default forms@bandrproduction.com)
+//   QUOTE_CC    — extra CC recipient(s), comma-separated (e.g. "a@x.com,b@y.com")
 //
 // NOTE: the QUOTE_FROM domain must be verified in Resend before delivery
 // works. For a quick test before verifying bandrproduction.com, set
@@ -71,19 +72,28 @@ async function handleQuote(request, env) {
       return json({ ok: false, error: "Email is not configured yet." }, 500);
     }
 
+    // Optional CC recipients — set QUOTE_CC (comma-separated for multiple).
+    const cc = clean(env.QUOTE_CC, 500)
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+
+    const payload = {
+      from: env.QUOTE_FROM || "B&R Productions Website <forms@bandrproduction.com>",
+      to: [env.QUOTE_TO || "info@bandrproduction.com"],
+      reply_to: email,
+      subject: `New ${source} request: ${name}${company ? " (" + company + ")" : ""}`,
+      text: lines.join("\n"),
+    };
+    if (cc.length) payload.cc = cc;
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: env.QUOTE_FROM || "B&R Productions Website <forms@bandrproduction.com>",
-        to: [env.QUOTE_TO || "info@bandrproduction.com"],
-        reply_to: email,
-        subject: `New ${source} request: ${name}${company ? " (" + company + ")" : ""}`,
-        text: lines.join("\n"),
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
