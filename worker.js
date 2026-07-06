@@ -5,10 +5,10 @@
 //
 // Required Cloudflare env var (Workers > Settings > Variables and Secrets):
 //   RESEND_API_KEY  (secret)  — your Resend API key
-// Optional (sensible defaults below):
-//   QUOTE_TO    — where leads are delivered (default info@bandrproduction.com)
+// Optional (env vars override these defaults):
+//   QUOTE_TO    — where leads are delivered (default sales@bandrproduction.com)
 //   QUOTE_FROM  — verified Resend sender (default forms@bandrproduction.com)
-//   QUOTE_CC    — extra CC recipient(s), comma-separated (e.g. "a@x.com,b@y.com")
+//   QUOTE_CC    — extra CC recipient(s), comma-separated (default hello@aaron.chat)
 //
 // NOTE: the QUOTE_FROM domain must be verified in Resend before delivery
 // works. For a quick test before verifying bandrproduction.com, set
@@ -72,15 +72,16 @@ async function handleQuote(request, env) {
       return json({ ok: false, error: "Email is not configured yet." }, 500);
     }
 
-    // Optional CC recipients — set QUOTE_CC (comma-separated for multiple).
-    const cc = clean(env.QUOTE_CC, 500)
+    // Optional CC recipients — QUOTE_CC env var (comma-separated) overrides.
+    const ccRaw = env.QUOTE_CC != null ? String(env.QUOTE_CC) : "hello@aaron.chat";
+    const cc = clean(ccRaw, 500)
       .split(",")
       .map((a) => a.trim())
       .filter(Boolean);
 
     const payload = {
       from: env.QUOTE_FROM || "B&R Productions Website <forms@bandrproduction.com>",
-      to: [env.QUOTE_TO || "info@bandrproduction.com"],
+      to: [env.QUOTE_TO || "sales@bandrproduction.com"],
       reply_to: email,
       subject: `New ${source} request: ${name}${company ? " (" + company + ")" : ""}`,
       text: lines.join("\n"),
