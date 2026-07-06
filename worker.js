@@ -72,16 +72,21 @@ async function handleQuote(request, env) {
       return json({ ok: false, error: "Email is not configured yet." }, 500);
     }
 
-    // TEMP: solo-recipient test — force hello@aaron.chat only, ignore env vars,
-    // no CC. Revert to env-driven routing (sales@ + CC hello@aaron.chat) after
-    // the test send confirms Resend delivery.
+    // CC recipients — QUOTE_CC env var (comma-separated) overrides the default.
+    const ccRaw = env.QUOTE_CC != null ? String(env.QUOTE_CC) : "hello@aaron.chat";
+    const cc = clean(ccRaw, 500)
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+
     const payload = {
       from: env.QUOTE_FROM || "B&R Productions Website <forms@bandrproduction.com>",
-      to: ["hello@aaron.chat"],
+      to: [env.QUOTE_TO || "sales@bandrproduction.com"],
       reply_to: email,
       subject: `New ${source} request: ${name}${company ? " (" + company + ")" : ""}`,
       text: lines.join("\n"),
     };
+    if (cc.length) payload.cc = cc;
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
