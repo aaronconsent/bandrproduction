@@ -12,5 +12,9 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
-  ]
+  ],
+  "triggers": {
+    // Monday 13:00 UTC ≈ 08:00 America/Chicago — weekly lead digest email
+    "crons": ["0 13 * * 1"]
+  }
 }
