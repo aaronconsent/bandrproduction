@@ -221,6 +221,446 @@ async function sendWeeklyDigest(env) {
 }
 
 // ---------------------------------------------------------------------------
+// Telemetry — AI bot + AI-referrer detection for AEO tracking.
+// Runs on every request; logs aggregate daily counts to LEADS_KV. Zero PII,
+// no IPs stored — only per-day, per-bot counters.
+// ---------------------------------------------------------------------------
+
+const AI_BOTS = [
+  ["GPTBot", "openai-gptbot"],
+  ["OAI-SearchBot", "openai-searchbot"],
+  ["ChatGPT-User", "openai-chatgpt-user"],
+  ["ClaudeBot", "anthropic-claudebot"],
+  ["anthropic-ai", "anthropic-ai"],
+  ["Claude-Web", "anthropic-claude-web"],
+  ["PerplexityBot", "perplexity-bot"],
+  ["Perplexity-User", "perplexity-user"],
+  ["Google-Extended", "google-extended"],
+  ["Googlebot", "google-search"],
+  ["Bingbot", "bing-search"],
+  ["bingbot", "bing-search"],
+  ["CCBot", "common-crawl"],
+  ["Bytespider", "bytedance"],
+  ["FacebookBot", "meta-ai"],
+  ["meta-externalagent", "meta-ai"],
+  ["DuckAssistBot", "duckduckgo"],
+  ["MistralAI-User", "mistral"],
+  ["cohere-ai", "cohere"],
+  ["Applebot-Extended", "apple-ai"],
+  ["YandexBot", "yandex"],
+  ["Amazonbot", "amazon"],
+];
+
+const AI_REFERRERS = [
+  "chat.openai.com",
+  "chatgpt.com",
+  "perplexity.ai",
+  "claude.ai",
+  "gemini.google.com",
+  "bard.google.com",
+  "copilot.microsoft.com",
+  "you.com",
+  "phind.com",
+  "duckduckgo.com",
+];
+
+function detectAiBot(ua) {
+  if (!ua) return null;
+  for (const [pat, name] of AI_BOTS) if (ua.indexOf(pat) !== -1) return name;
+  return null;
+}
+
+function detectAiReferrer(ref) {
+  if (!ref) return null;
+  try {
+    const h = new URL(ref).hostname;
+    for (const d of AI_REFERRERS) if (h === d || h.endsWith("." + d)) return d;
+  } catch (_) {}
+  return null;
+}
+
+function isContentPath(p) {
+  // count page views for HTML docs; skip static/API/admin routes
+  if (p.startsWith("/api/")) return false;
+  if (p.startsWith("/outreach")) return false;
+  if (p.startsWith("/dashboard")) return false;
+  if (p.startsWith("/_next/")) return false;
+  if (p.startsWith("/_external/")) return false;
+  if (p.startsWith("/cdn-cgi/")) return false;
+  if (/\.(png|jpe?g|gif|svg|webp|ico|css|js|woff2?|txt|xml|json|map)$/i.test(p)) return false;
+  return true;
+}
+
+async function bumpCounter(env, key) {
+  const cur = await env.LEADS_KV.get(key);
+  const n = cur ? (parseInt(cur, 10) || 0) : 0;
+  return env.LEADS_KV.put(key, String(n + 1), { expirationTtl: 60 * 60 * 24 * 120 });
+}
+
+async function logTelemetry(request, env, url) {
+  if (!env.LEADS_KV) return;
+  const ua = request.headers.get("user-agent") || "";
+  const ref = request.headers.get("referer") || "";
+  const p = url.pathname;
+  const bot = detectAiBot(ua);
+  const aiRef = detectAiReferrer(ref);
+  const isPage = isContentPath(p);
+  if (!bot && !aiRef && !isPage) return;
+  const day = new Date().toISOString().slice(0, 10);
+  const puts = [];
+  if (bot) {
+    puts.push(bumpCounter(env, `tel:bot:${bot}:${day}`));
+    puts.push(env.LEADS_KV.put(`tel:bot:${bot}:last`,
+      JSON.stringify({ ts: Date.now(), path: p.slice(0, 200) }),
+      { expirationTtl: 60 * 60 * 24 * 120 }));
+  }
+  if (aiRef) {
+    puts.push(bumpCounter(env, `tel:ref:${aiRef}:${day}`));
+    puts.push(env.LEADS_KV.put(`tel:ref:${aiRef}:last`,
+      JSON.stringify({ ts: Date.now(), path: p.slice(0, 200) }),
+      { expirationTtl: 60 * 60 * 24 * 120 }));
+  }
+  if (isPage && !bot) puts.push(bumpCounter(env, `tel:pv:${day}`));
+  await Promise.all(puts);
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard — SEO + AEO insights UI at /dashboard/.
+// Reuses OUTREACH_TOKEN cookie so it's behind the same lightweight auth
+// as /outreach/. Reads aggregates from KV; renders inline.
+// ---------------------------------------------------------------------------
+
+// AEO targets — buyer-intent queries we WANT to be cited/rank for. Static
+// list; used in the dashboard to show the aspiration side of AEO measurement.
+const AEO_TARGETS = [
+  { q: "who does frac pump machining in East Texas", why: "Direct buyer intent, our home turf" },
+  { q: "wellhead component machining shop Texas", why: "API 6A category" },
+  { q: "Inconel 718 machining shop New Waverly TX", why: "Alloy + geo, high-intent" },
+  { q: "Super Duplex 2507 machining Texas", why: "Corrosion-critical, low-competition" },
+  { q: "API 6A CNC machining shop", why: "Compliance-signaled buyer" },
+  { q: "downhole tool machining Houston area", why: "Regional oilfield services" },
+  { q: "CNC machine shop Conroe TX", why: "Local geo, near-shop" },
+  { q: "who machines Inconel and Super Duplex in Texas", why: "Alloy-first LLM query pattern" },
+  { q: "aerospace CNC machining Texas", why: "Non-O&G diversification" },
+  { q: "emergency rig-down CNC machining Texas", why: "Urgency-driven category we own" },
+  { q: "reverse engineer discontinued oilfield parts Texas", why: "Sole-source niche we win" },
+  { q: "wireline tool machining shop Texas", why: "Wireline service co ICP" },
+];
+
+async function dashboardSummary(request, env) {
+  const auth = outreachAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg }, auth.code);
+  if (!env.LEADS_KV) return json({ ok: true, kv: false, bots: {}, refs: {}, pv: {}, lastBots: {}, lastRefs: {} });
+  const url = new URL(request.url);
+  const days = Math.max(1, Math.min(parseInt(url.searchParams.get("days") || "30", 10), 90));
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+  const bots = {};   // bot -> { total, byDay: {day:n} }
+  const refs = {};
+  const pv = {};     // day -> count
+  const lastBots = {};
+  const lastRefs = {};
+
+  async function readAll(prefix, cb) {
+    let cursor = undefined;
+    do {
+      const list = await env.LEADS_KV.list({ prefix, cursor, limit: 1000 });
+      for (const k of list.keys) {
+        const raw = await env.LEADS_KV.get(k.name);
+        if (raw != null) await cb(k.name, raw);
+      }
+      cursor = list.list_complete ? undefined : list.cursor;
+    } while (cursor);
+  }
+
+  await readAll("tel:bot:", async (name, raw) => {
+    // name = tel:bot:<bot>:<day|last>
+    const parts = name.split(":");
+    if (parts.length < 4) return;
+    const bot = parts[2], tag = parts[3];
+    if (tag === "last") { try { lastBots[bot] = JSON.parse(raw); } catch (_) {} return; }
+    if (tag < cutoff) return;
+    const n = parseInt(raw, 10) || 0;
+    if (!bots[bot]) bots[bot] = { total: 0, byDay: {} };
+    bots[bot].total += n;
+    bots[bot].byDay[tag] = n;
+  });
+  await readAll("tel:ref:", async (name, raw) => {
+    const parts = name.split(":");
+    if (parts.length < 4) return;
+    const r = parts[2], tag = parts[3];
+    if (tag === "last") { try { lastRefs[r] = JSON.parse(raw); } catch (_) {} return; }
+    if (tag < cutoff) return;
+    const n = parseInt(raw, 10) || 0;
+    if (!refs[r]) refs[r] = { total: 0, byDay: {} };
+    refs[r].total += n;
+    refs[r].byDay[tag] = n;
+  });
+  await readAll("tel:pv:", async (name, raw) => {
+    const day = name.slice("tel:pv:".length);
+    if (day < cutoff) return;
+    pv[day] = parseInt(raw, 10) || 0;
+  });
+
+  return json({
+    ok: true, kv: true, days,
+    bots, refs, pv, lastBots, lastRefs,
+    aeoTargets: AEO_TARGETS,
+  });
+}
+
+function dashboardUI(request, env) {
+  const auth = outreachAuth(request, env);
+  if (!auth.ok) {
+    return new Response(
+      "<h1>Dashboard</h1><p>" + (auth.msg || "unauthorized") + "</p><p>Visit <code>/dashboard/?token=YOUR_TOKEN</code> once to set the cookie.</p>",
+      { status: auth.code, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  }
+  const headers = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" };
+  if (auth.setCookie) {
+    headers["Set-Cookie"] = `${OUTREACH_COOKIE}=${env.OUTREACH_TOKEN}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`;
+  }
+  return new Response(DASHBOARD_HTML, { headers });
+}
+
+const DASHBOARD_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>B&R Insights — SEO + AEO Dashboard</title>
+<meta name="robots" content="noindex,nofollow"/>
+<style>
+:root{--brand:#0C74C0;--ink:#0f1e3a;--muted:#4a5568;--bg:#F4F5F6;--card:#fff;--border:#DDE0E4;--green:#1b7a3a;--amber:#b56100;--red:#b00020}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+.top{background:#0d0d0d;color:#fff;padding:14px 20px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.top a{color:#c9d1da;text-decoration:none;font-size:14px;font-weight:400;margin-left:16px}
+.top a:hover{color:#fff}
+.wrap{max-width:1200px;margin:24px auto;padding:0 20px}
+h1{font-size:26px;margin:0 0 4px}
+p.sub{color:var(--muted);margin:0 0 22px}
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:22px}
+.tab{padding:12px 22px;cursor:pointer;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px}
+.tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+.panel{display:none}.panel.active{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:22px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.card h3{margin:0 0 6px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.card .big{font-size:32px;font-weight:800;color:var(--ink);line-height:1}
+.card .sub{font-size:13px;color:var(--muted);margin-top:6px}
+.card.wide{grid-column:1/-1}
+.card h2{margin:0 0 14px;font-size:18px;color:var(--brand)}
+.card h4{margin:20px 0 8px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.btn{display:inline-block;padding:8px 16px;background:var(--brand);color:#fff;text-decoration:none;font-weight:600;font-size:14px;border-radius:6px;margin:4px 6px 4px 0}
+.btn:hover{background:#0a5f9c}
+.btn.ghost{background:transparent;color:var(--brand);border:1px solid var(--brand)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+.badge.on{background:#e6f4ea;color:var(--green)}
+.badge.pending{background:#fef2e6;color:var(--amber)}
+.badge.off{background:#fdecea;color:var(--red)}
+.note{background:#fef8e6;border:1px solid #f4d78b;padding:12px 14px;border-radius:8px;font-size:14px;color:#6a5100;margin:0 0 18px}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+select{padding:6px 10px;border-radius:6px;border:1px solid var(--border);font-size:14px}
+small{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="top">
+  <div>B&R Insights <span style="opacity:.65;font-weight:400;font-size:13px;margin-left:8px">SEO + AEO</span></div>
+  <div><a href="/">← site</a> <a href="/outreach/">outreach →</a></div>
+</div>
+<div class="wrap">
+  <h1>Where B&R is showing up</h1>
+  <p class="sub">SEO (search engines) is measurable via GSC + Bing Webmaster. AEO (AI answer engines) is emerging — we track bot crawls + referral click-throughs + a rotating query check.</p>
+
+  <div class="tabs">
+    <div class="tab active" data-panel="seo">SEO</div>
+    <div class="tab" data-panel="aeo">AEO</div>
+    <div class="tab" data-panel="setup">Setup</div>
+  </div>
+
+  <!-- ============ SEO PANEL ============ -->
+  <div class="panel active" id="panel-seo">
+    <div class="grid">
+      <div class="card"><h3>URLs in Sitemap</h3><div class="big" id="urlCount">–</div><div class="sub">Indexed via Google + Bing/Yandex/Naver (IndexNow)</div></div>
+      <div class="card"><h3>Page views (30d)</h3><div class="big" id="pvTotal">–</div><div class="sub">From Worker request log, human traffic only</div></div>
+      <div class="card"><h3>Feeds</h3><div class="big" style="font-size:18px;line-height:1.3">sitemap · rss · feed.json</div><div class="sub">All live, feed autodiscovery on every page</div></div>
+      <div class="card"><h3>IndexNow</h3><div class="big" style="font-size:18px;color:var(--green)">Verified</div><div class="sub">Key file live; auto-submit on every deploy</div></div>
+    </div>
+
+    <div class="card wide">
+      <h2>Open the primary SEO tools</h2>
+      <p style="color:var(--muted);margin:0 0 14px">These are the tools that actually show what queries drive impressions and clicks. Both free; verify each once via GTM (the container is already on the site).</p>
+      <a class="btn" href="https://search.google.com/search-console" target="_blank">Google Search Console →</a>
+      <a class="btn" href="https://www.bing.com/webmasters/" target="_blank">Bing Webmaster Tools →</a>
+      <a class="btn ghost" href="https://analytics.google.com/" target="_blank">GA4 →</a>
+      <a class="btn ghost" href="https://dash.cloudflare.com/" target="_blank">Cloudflare Web Analytics →</a>
+      <p class="hint" style="margin-top:14px"><strong>Verification tip:</strong> in GSC + Bing, pick "Google Tag Manager" as the verification method. The GTM container (GTM-WKQL399K) is already firing on every page, so the tool detects ownership instantly. Then submit <code>https://bandrproduction.com/sitemap.xml</code>.</p>
+    </div>
+  </div>
+
+  <!-- ============ AEO PANEL ============ -->
+  <div class="panel" id="panel-aeo">
+    <p class="note"><strong>AEO measurement is emerging.</strong> Traditional analytics miss most AI-answer traffic because engines answer inline. What we can measure: (1) which AI crawlers are indexing us, (2) any click-throughs from AI referrers, (3) rotating manual query checks. Numbers are proxies, not direct impressions.</p>
+
+    <div class="grid">
+      <div class="card"><h3>AI Bot hits <small>(<span id="aeoDays">30</span>d)</small></h3><div class="big" id="botTotal">–</div><div class="sub">GPTBot, ClaudeBot, PerplexityBot, etc.</div></div>
+      <div class="card"><h3>AI Referrer clicks <small>(<span id="aeoDays2">30</span>d)</small></h3><div class="big" id="refTotal">–</div><div class="sub">Actual click-throughs from AI answer pages</div></div>
+      <div class="card"><h3>Targets we're chasing</h3><div class="big" id="targetCount">–</div><div class="sub">Buyer-intent queries; rotate weekly</div></div>
+    </div>
+
+    <div style="margin:0 0 14px"><label>Window:
+      <select id="daysSel"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select>
+    </label></div>
+
+    <div class="card wide">
+      <h2>AI crawlers hitting the site</h2>
+      <p style="color:var(--muted);margin:0 0 12px;font-size:14px">Every crawl = your content being ingested for an AI answer engine's index.</p>
+      <div id="botsTbl"><small>loading...</small></div>
+    </div>
+
+    <div class="card wide">
+      <h2>Click-throughs from AI answer pages</h2>
+      <p style="color:var(--muted);margin:0 0 12px;font-size:14px">A visitor arriving here after reading an AI answer that mentioned or linked B&R.</p>
+      <div id="refsTbl"><small>loading...</small></div>
+    </div>
+
+    <div class="card wide">
+      <h2>AEO targets — what we're trying for</h2>
+      <p style="color:var(--muted);margin:0 0 12px;font-size:14px">Ask ChatGPT / Perplexity / Claude / Gemini / Copilot each of these ~monthly. Note whether B&R appears + is linked. Add findings to the Sunday briefing so we know which content to expand.</p>
+      <table><thead><tr><th>Query</th><th>Why we care</th><th>Try it</th></tr></thead>
+      <tbody id="targetsTbl"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ============ SETUP PANEL ============ -->
+  <div class="panel" id="panel-setup">
+    <div class="card wide">
+      <h2>What's active vs. pending</h2>
+      <table>
+        <tbody>
+          <tr><td>GTM container (GTM-WKQL399K)</td><td><span class="badge on">Firing</span></td><td>GA4 + Google Ads inside</td></tr>
+          <tr><td>Sitemap + RSS + JSON Feed</td><td><span class="badge on">Live</span></td><td>Autodiscovery on every page</td></tr>
+          <tr><td>IndexNow (Bing/Yandex/Naver)</td><td><span class="badge on">Verified</span></td><td>Auto-submit each deploy</td></tr>
+          <tr><td>llms.txt</td><td><span class="badge on">Published</span></td><td>Structured signal for LLM ingestion</td></tr>
+          <tr><td>Google Search Console</td><td><span class="badge pending">Verify</span></td><td>Use GTM as the verification method</td></tr>
+          <tr><td>Bing Webmaster Tools</td><td><span class="badge pending">Verify</span></td><td>Same GTM verification path</td></tr>
+          <tr><td>Cloudflare Web Analytics</td><td><span class="badge pending">Enable</span></td><td>Dashboard → Analytics → Enable, paste site tag to me</td></tr>
+          <tr><td>Worker AI-bot telemetry</td><td><span id="kvBadge" class="badge pending">KV needed</span></td><td>Bind LEADS_KV in the Worker settings — then this dashboard starts populating</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card wide">
+      <h2>Enable Cloudflare Web Analytics</h2>
+      <ol style="margin:0;padding-left:22px;line-height:1.7">
+        <li>Cloudflare dashboard → <strong>Analytics &amp; Logs</strong> → <strong>Web Analytics</strong> → <strong>Add a site</strong> → <code>bandrproduction.com</code>.</li>
+        <li>Copy the <strong>site tag</strong> (looks like a 32-char token).</li>
+        <li>Send it to me — I add it as a script tag and it starts collecting page views + Core Web Vitals + bot filtering.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $('panel-' + t.dataset.panel).classList.add('active');
+}));
+$('daysSel').addEventListener('change', () => load($('daysSel').value));
+
+function fmtDate(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toISOString().slice(0,10);
+}
+function fmtRel(ts) {
+  if (!ts) return '—';
+  const d = Math.round((Date.now() - ts) / 86400000);
+  return d < 1 ? 'today' : d + 'd ago';
+}
+function esc(s) { return String(s || '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function load(days) {
+  days = days || 30;
+  $('aeoDays').textContent = days; $('aeoDays2').textContent = days;
+  const r = await fetch('/dashboard/api/summary?days=' + days);
+  const d = await r.json();
+  if (!d.ok) { alert(d.error || 'load failed'); return; }
+  if (!d.kv) { $('kvBadge').className = 'badge off'; $('kvBadge').textContent = 'not bound'; }
+  else { $('kvBadge').className = 'badge on'; $('kvBadge').textContent = 'active'; }
+
+  // SEO cards
+  const urlCount = 46; // sitemap URL count — kept static for the header stat
+  $('urlCount').textContent = urlCount;
+  const pvTotal = Object.values(d.pv || {}).reduce((a,b) => a + b, 0);
+  $('pvTotal').textContent = pvTotal || (d.kv ? '0' : '—');
+
+  // AEO cards
+  const botTotal = Object.values(d.bots || {}).reduce((a,b) => a + (b.total||0), 0);
+  const refTotal = Object.values(d.refs || {}).reduce((a,b) => a + (b.total||0), 0);
+  $('botTotal').textContent = botTotal || (d.kv ? '0' : '—');
+  $('refTotal').textContent = refTotal || (d.kv ? '0' : '—');
+  $('targetCount').textContent = (d.aeoTargets || []).length;
+
+  // Bots table
+  const botsEntries = Object.entries(d.bots || {}).sort((a,b) => b[1].total - a[1].total);
+  if (!botsEntries.length) {
+    $('botsTbl').innerHTML = '<small>' + (d.kv ? 'No AI bot hits recorded yet in this window. New crawls will appear here.' : 'LEADS_KV not bound — bind it in the Worker settings to start capturing.') + '</small>';
+  } else {
+    const rows = botsEntries.map(([bot, s]) => {
+      const last = d.lastBots[bot];
+      return '<tr><td><strong>' + esc(bot) + '</strong></td>' +
+             '<td class="num">' + s.total + '</td>' +
+             '<td><small>' + fmtRel(last && last.ts) + '</small></td>' +
+             '<td><small>' + esc((last && last.path) || '') + '</small></td></tr>';
+    }).join('');
+    $('botsTbl').innerHTML = '<table><thead><tr><th>Crawler</th><th class="num">Hits</th><th>Last seen</th><th>Last URL</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  // Refs table
+  const refsEntries = Object.entries(d.refs || {}).sort((a,b) => b[1].total - a[1].total);
+  if (!refsEntries.length) {
+    $('refsTbl').innerHTML = '<small>' + (d.kv ? 'No AI-referrer clicks in this window. When someone clicks through from ChatGPT/Perplexity/Claude/etc., they show here.' : 'Bind LEADS_KV to start capturing.') + '</small>';
+  } else {
+    const rows = refsEntries.map(([r, s]) => {
+      const last = d.lastRefs[r];
+      return '<tr><td><strong>' + esc(r) + '</strong></td>' +
+             '<td class="num">' + s.total + '</td>' +
+             '<td><small>' + fmtRel(last && last.ts) + '</small></td>' +
+             '<td><small>' + esc((last && last.path) || '') + '</small></td></tr>';
+    }).join('');
+    $('refsTbl').innerHTML = '<table><thead><tr><th>Source</th><th class="num">Clicks</th><th>Last seen</th><th>Landed on</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  // Targets
+  const targets = d.aeoTargets || [];
+  $('targetsTbl').innerHTML = targets.map(t => {
+    const q = encodeURIComponent(t.q);
+    return '<tr><td><strong>' + esc(t.q) + '</strong></td>' +
+           '<td><small>' + esc(t.why) + '</small></td>' +
+           '<td>' +
+             '<a class="btn ghost" style="padding:4px 10px;font-size:12px;margin:2px" href="https://www.perplexity.ai/?q=' + q + '" target="_blank">Perplexity</a>' +
+             '<a class="btn ghost" style="padding:4px 10px;font-size:12px;margin:2px" href="https://chatgpt.com/?q=' + q + '" target="_blank">ChatGPT</a>' +
+             '<a class="btn ghost" style="padding:4px 10px;font-size:12px;margin:2px" href="https://claude.ai/new?q=' + q + '" target="_blank">Claude</a>' +
+             '<a class="btn ghost" style="padding:4px 10px;font-size:12px;margin:2px" href="https://www.google.com/search?q=' + q + '&udm=50" target="_blank">Google AI</a>' +
+           '</td></tr>';
+  }).join('');
+}
+load(30);
+</script>
+</body>
+</html>`;
+
+// ---------------------------------------------------------------------------
 // Outreach — Aaron-in-the-loop personal email tool.
 // Not a cold-email campaign: each send is per-click, one recipient at a time,
 // from a real inbox, plain text, no tracking. The Worker's job is to draft, log,
@@ -644,6 +1084,12 @@ export default {
     if (p === "/outreach/api/send"   && request.method === "POST") return outreachSend(request, env, ctx);
     if (p === "/outreach/api/mark"   && request.method === "POST") return outreachMark(request, env, ctx);
     if (p === "/outreach/api/list"   && request.method === "GET")  return outreachList(request, env);
+    // Dashboard UI + summary API
+    if (p === "/dashboard" || p === "/dashboard/") return dashboardUI(request, env);
+    if (p === "/dashboard/api/summary" && request.method === "GET") return dashboardSummary(request, env);
+    // Log telemetry (AI bot + AI referrer + page views) — async, doesn't
+    // delay the response.
+    ctx.waitUntil(logTelemetry(request, env, url).catch(() => {}));
     // Fallback: serve static assets (normally handled before the Worker runs).
     return env.ASSETS.fetch(request);
   },
