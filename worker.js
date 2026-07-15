@@ -329,6 +329,231 @@ async function logTelemetry(request, env, url) {
 // Reads aggregates from KV; renders inline.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// External data integrations (SEO/AEO measurement stack).
+// Each source is optional — if its secrets aren't set, the endpoint returns
+// { ok: true, configured: false, note: "..." } so the dashboard renders a
+// helpful "configure me" prompt per source instead of an error.
+//
+// Required Worker secrets (all optional; add whichever you want):
+//   CF_ANALYTICS_TOKEN         — Cloudflare API token (Account+Zone Analytics: Read)
+//   CF_ZONE_ID                 — bandrproduction.com zone ID (CF dashboard overview)
+//   BING_WEBMASTER_KEY         — Bing Webmaster Tools API key
+//   BING_SITE_URL              — usually "https://bandrproduction.com/" (default)
+//   GSC_SERVICE_ACCOUNT_JSON   — Google Cloud service account JSON key (full blob)
+//   GSC_SITE_URL               — usually "sc-domain:bandrproduction.com" (default)
+//   GA4_SERVICE_ACCOUNT_JSON   — same or separate GCP service account
+//   GA4_PROPERTY_ID            — GA4 property ID (numeric, e.g. "123456789")
+//
+// The GCP service account email must be added as a User on both the GSC
+// property and the GA4 property for the API calls to succeed.
+// ---------------------------------------------------------------------------
+
+function b64urlEncode(bytes) {
+  const str = typeof bytes === "string"
+    ? bytes
+    : String.fromCharCode(...new Uint8Array(bytes));
+  return btoa(str).replace(/=+$/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function importGoogleKey(pkcs8Pem) {
+  const raw = pkcs8Pem
+    .replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\r|\n/g, "")
+    .trim();
+  const bin = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
+  return crypto.subtle.importKey(
+    "pkcs8",
+    bin,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+}
+
+async function signGoogleJwt(saJson, scope) {
+  const sa = typeof saJson === "string" ? JSON.parse(saJson) : saJson;
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "RS256", typ: "JWT", kid: sa.private_key_id };
+  const payload = {
+    iss: sa.client_email,
+    scope,
+    aud: "https://oauth2.googleapis.com/token",
+    exp: now + 3600,
+    iat: now,
+  };
+  const input = `${b64urlEncode(JSON.stringify(header))}.${b64urlEncode(JSON.stringify(payload))}`;
+  const key = await importGoogleKey(sa.private_key);
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(input));
+  return `${input}.${b64urlEncode(sig)}`;
+}
+
+// Get a Google API access token for the given service account + scope.
+// Caches to LEADS_KV when available (55-minute TTL, JSON-serialized).
+async function getGoogleToken(env, secretName, scope) {
+  const raw = env[secretName];
+  if (!raw) throw new Error(`${secretName} not set`);
+  const cacheKey = `google:token:${secretName}:${scope}`;
+  if (env.LEADS_KV) {
+    const hit = await env.LEADS_KV.get(cacheKey);
+    if (hit) {
+      try {
+        const { token, exp } = JSON.parse(hit);
+        if (token && exp && exp > Math.floor(Date.now() / 1000) + 60) return token;
+      } catch (_) {}
+    }
+  }
+  const jwt = await signGoogleJwt(raw, scope);
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const data = await res.json();
+  if (!res.ok || !data.access_token) {
+    throw new Error(`Google token exchange failed: ${res.status} ${data.error || JSON.stringify(data).slice(0, 200)}`);
+  }
+  if (env.LEADS_KV) {
+    const exp = Math.floor(Date.now() / 1000) + (data.expires_in || 3600);
+    await env.LEADS_KV.put(cacheKey, JSON.stringify({ token: data.access_token, exp }), { expirationTtl: 3300 });
+  }
+  return data.access_token;
+}
+
+// ---- Google Search Console ----
+async function gscSummary(env, days) {
+  if (!env.GSC_SERVICE_ACCOUNT_JSON) {
+    return { ok: true, configured: false, note: "Set GSC_SERVICE_ACCOUNT_JSON (Google Cloud service account JSON) as a Worker Secret. Add its client_email as a User on the GSC property." };
+  }
+  const site = env.GSC_SITE_URL || "sc-domain:bandrproduction.com";
+  const endDate = new Date().toISOString().slice(0, 10);
+  const startDate = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  try {
+    const token = await getGoogleToken(env, "GSC_SERVICE_ACCOUNT_JSON", "https://www.googleapis.com/auth/webmasters.readonly");
+    const url = `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(site)}/searchAnalytics/query`;
+    async function q(dims) {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ startDate, endDate, dimensions: dims, rowLimit: 25 }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(`GSC ${r.status}: ${j.error && j.error.message || ""}`);
+      return j.rows || [];
+    }
+    const [queries, pages] = await Promise.all([q(["query"]), q(["page"])]);
+    const totClicks = queries.reduce((a, x) => a + (x.clicks || 0), 0);
+    const totImp = queries.reduce((a, x) => a + (x.impressions || 0), 0);
+    const avgPos = queries.length ? queries.reduce((a, x) => a + (x.position || 0), 0) / queries.length : 0;
+    return { ok: true, configured: true, site, days, totals: { clicks: totClicks, impressions: totImp, avgPosition: Number(avgPos.toFixed(1)) }, queries, pages };
+  } catch (e) {
+    return { ok: false, configured: true, error: String(e && e.message || e) };
+  }
+}
+
+// ---- GA4 Data API ----
+async function ga4Summary(env, days) {
+  if (!env.GA4_SERVICE_ACCOUNT_JSON || !env.GA4_PROPERTY_ID) {
+    return { ok: true, configured: false, note: "Set GA4_SERVICE_ACCOUNT_JSON (can be the same key as GSC) and GA4_PROPERTY_ID as Worker Secrets. Add the service account client_email as a User on the GA4 property." };
+  }
+  const endDate = new Date().toISOString().slice(0, 10);
+  const startDate = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  try {
+    const token = await getGoogleToken(env, "GA4_SERVICE_ACCOUNT_JSON", "https://www.googleapis.com/auth/analytics.readonly");
+    const url = `https://analyticsdata.googleapis.com/v1beta/properties/${env.GA4_PROPERTY_ID}:runReport`;
+    async function run(body) {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(`GA4 ${r.status}: ${j.error && j.error.message || ""}`);
+      return j;
+    }
+    const [pages, sources, totals] = await Promise.all([
+      run({ dateRanges: [{ startDate, endDate }], dimensions: [{ name: "pagePath" }], metrics: [{ name: "screenPageViews" }, { name: "totalUsers" }], orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }], limit: 25 }),
+      run({ dateRanges: [{ startDate, endDate }], dimensions: [{ name: "sessionSource" }], metrics: [{ name: "sessions" }, { name: "totalUsers" }], orderBys: [{ metric: { metricName: "sessions" }, desc: true }], limit: 15 }),
+      run({ dateRanges: [{ startDate, endDate }], metrics: [{ name: "sessions" }, { name: "totalUsers" }, { name: "screenPageViews" }, { name: "engagementRate" }] }),
+    ]);
+    return { ok: true, configured: true, days, propertyId: env.GA4_PROPERTY_ID, totals: (totals.rows || [])[0] || null, pages: pages.rows || [], sources: sources.rows || [] };
+  } catch (e) {
+    return { ok: false, configured: true, error: String(e && e.message || e) };
+  }
+}
+
+// ---- Bing Webmaster Tools ----
+async function bingSummary(env) {
+  if (!env.BING_WEBMASTER_KEY) {
+    return { ok: true, configured: false, note: "Set BING_WEBMASTER_KEY as a Worker Secret (Bing Webmaster → Settings → API Access → generate key)." };
+  }
+  const site = env.BING_SITE_URL || "https://bandrproduction.com/";
+  try {
+    async function bing(op) {
+      const u = `https://ssl.bing.com/webmaster/api.svc/json/${op}?siteUrl=${encodeURIComponent(site)}&apikey=${env.BING_WEBMASTER_KEY}`;
+      const r = await fetch(u);
+      const j = await r.json();
+      if (!r.ok) throw new Error(`Bing ${op} ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
+      return j.d || [];
+    }
+    const [queries, pages, stats] = await Promise.all([
+      bing("GetQueryStats"),
+      bing("GetPageStats"),
+      bing("GetRankAndTrafficStats"),
+    ]);
+    return { ok: true, configured: true, site, queries: queries.slice(0, 25), pages: pages.slice(0, 25), stats: stats.slice(0, 30) };
+  } catch (e) {
+    return { ok: false, configured: true, error: String(e && e.message || e) };
+  }
+}
+
+// ---- Cloudflare Web Analytics via GraphQL Analytics API ----
+async function cfAnalyticsSummary(env, days) {
+  if (!env.CF_ANALYTICS_TOKEN || !env.CF_ZONE_ID) {
+    return { ok: true, configured: false, note: "Set CF_ANALYTICS_TOKEN (Cloudflare API token with Account+Zone Analytics: Read) and CF_ZONE_ID (from Cloudflare zone overview) as Worker Secrets." };
+  }
+  const end = new Date().toISOString();
+  const start = new Date(Date.now() - days * 86400000).toISOString();
+  const query = `query GetRUM($zoneTag: String!, $start: Time!, $end: Time!) {
+    viewer {
+      zones(filter: {zoneTag: $zoneTag}) {
+        totals: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, limit: 1) { count }
+        byPath: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 25) {
+          count
+          dimensions { requestPath }
+        }
+        byCountry: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 15) {
+          count
+          dimensions { countryName }
+        }
+        byDevice: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 5) {
+          count
+          dimensions { deviceType }
+        }
+        byReferer: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 15) {
+          count
+          dimensions { refererHost }
+        }
+      }
+    }
+  }`;
+  try {
+    const r = await fetch("https://api.cloudflare.com/client/v4/graphql", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables: { zoneTag: env.CF_ZONE_ID, start, end } }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.errors) {
+      throw new Error(`CF Analytics ${r.status}: ${(j.errors && j.errors[0] && j.errors[0].message) || JSON.stringify(j).slice(0, 200)}`);
+    }
+    const z = j.data && j.data.viewer && j.data.viewer.zones && j.data.viewer.zones[0];
+    if (!z) throw new Error("no zone data (check CF_ZONE_ID + token permissions)");
+    return { ok: true, configured: true, days, totals: (z.totals && z.totals[0]) || null, byPath: z.byPath || [], byCountry: z.byCountry || [], byDevice: z.byDevice || [], byReferer: z.byReferer || [] };
+  } catch (e) {
+    return { ok: false, configured: true, error: String(e && e.message || e) };
+  }
+}
+
 // Simple bearer-token auth for the dashboard, gated by a cookie. Visit
 // /dashboard/?token=<DASHBOARD_TOKEN> once; sets a 30-day HttpOnly cookie.
 const DASHBOARD_COOKIE = "br_dash";
@@ -360,6 +585,31 @@ const AEO_TARGETS = [
   { q: "reverse engineer discontinued oilfield parts Texas", why: "Sole-source niche we win" },
   { q: "wireline tool machining shop Texas", why: "Wireline service co ICP" },
 ];
+
+// Auth-wrapped endpoint handlers for the external data sources.
+async function endpointGsc(request, env) {
+  const auth = dashboardAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg }, auth.code);
+  const days = Math.max(1, Math.min(parseInt(new URL(request.url).searchParams.get("days") || "28", 10), 90));
+  return json(await gscSummary(env, days));
+}
+async function endpointGa4(request, env) {
+  const auth = dashboardAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg }, auth.code);
+  const days = Math.max(1, Math.min(parseInt(new URL(request.url).searchParams.get("days") || "28", 10), 90));
+  return json(await ga4Summary(env, days));
+}
+async function endpointBing(request, env) {
+  const auth = dashboardAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg }, auth.code);
+  return json(await bingSummary(env));
+}
+async function endpointCfAnalytics(request, env) {
+  const auth = dashboardAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg }, auth.code);
+  const days = Math.max(1, Math.min(parseInt(new URL(request.url).searchParams.get("days") || "28", 10), 90));
+  return json(await cfAnalyticsSummary(env, days));
+}
 
 async function dashboardSummary(request, env) {
   const auth = dashboardAuth(request, env);
@@ -501,20 +751,46 @@ small{color:var(--muted)}
   <!-- ============ SEO PANEL ============ -->
   <div class="panel active" id="panel-seo">
     <div class="grid">
-      <div class="card"><h3>URLs in Sitemap</h3><div class="big" id="urlCount">–</div><div class="sub">Indexed via Google + Bing/Yandex/Naver (IndexNow)</div></div>
-      <div class="card"><h3>Page views (30d)</h3><div class="big" id="pvTotal">–</div><div class="sub">From Worker request log, human traffic only</div></div>
-      <div class="card"><h3>Feeds</h3><div class="big" style="font-size:18px;line-height:1.3">sitemap · rss · feed.json</div><div class="sub">All live, feed autodiscovery on every page</div></div>
-      <div class="card"><h3>IndexNow</h3><div class="big" style="font-size:18px;color:var(--green)">Verified</div><div class="sub">Key file live; auto-submit on every deploy</div></div>
+      <div class="card"><h3>URLs in Sitemap</h3><div class="big" id="urlCount">–</div><div class="sub">Indexed via Google + Bing/Yandex/Naver</div></div>
+      <div class="card"><h3>Page views (30d)</h3><div class="big" id="pvTotal">–</div><div class="sub">Worker request log; add CF Web Analytics for full picture</div></div>
+      <div class="card"><h3>IndexNow</h3><div class="big" style="font-size:18px;color:var(--green)">Verified</div><div class="sub">Auto-submit on every deploy</div></div>
+      <div class="card"><h3>Feeds</h3><div class="big" style="font-size:16px;line-height:1.3">sitemap · rss · feed.json · llms.txt</div><div class="sub">Autodiscovery on every page</div></div>
+    </div>
+
+    <div style="margin:22px 0 12px"><label>Window:
+      <select id="seoDays"><option value="7">7 days</option><option value="28" selected>28 days</option><option value="90">90 days</option></select>
+    </label></div>
+
+    <!-- Google Search Console -->
+    <div class="card wide">
+      <h2>Google Search Console</h2>
+      <div id="gscBox"><small>loading...</small></div>
+    </div>
+
+    <!-- GA4 -->
+    <div class="card wide">
+      <h2>Google Analytics 4</h2>
+      <div id="ga4Box"><small>loading...</small></div>
+    </div>
+
+    <!-- Bing Webmaster -->
+    <div class="card wide">
+      <h2>Bing Webmaster</h2>
+      <div id="bingBox"><small>loading...</small></div>
+    </div>
+
+    <!-- Cloudflare Web Analytics -->
+    <div class="card wide">
+      <h2>Cloudflare Web Analytics</h2>
+      <div id="cfBox"><small>loading...</small></div>
     </div>
 
     <div class="card wide">
-      <h2>Open the primary SEO tools</h2>
-      <p style="color:var(--muted);margin:0 0 14px">These are the tools that actually show what queries drive impressions and clicks. Both free; verify each once via GTM (the container is already on the site).</p>
-      <a class="btn" href="https://search.google.com/search-console" target="_blank">Google Search Console →</a>
-      <a class="btn" href="https://www.bing.com/webmasters/" target="_blank">Bing Webmaster Tools →</a>
+      <h2>Open the underlying tools</h2>
+      <a class="btn" href="https://search.google.com/search-console" target="_blank">GSC →</a>
+      <a class="btn" href="https://www.bing.com/webmasters/" target="_blank">Bing WMT →</a>
       <a class="btn ghost" href="https://analytics.google.com/" target="_blank">GA4 →</a>
-      <a class="btn ghost" href="https://dash.cloudflare.com/" target="_blank">Cloudflare Web Analytics →</a>
-      <p class="hint" style="margin-top:14px"><strong>Verification tip:</strong> in GSC + Bing, pick "Google Tag Manager" as the verification method. The GTM container (GTM-WKQL399K) is already firing on every page, so the tool detects ownership instantly. Then submit <code>https://bandrproduction.com/sitemap.xml</code>.</p>
+      <a class="btn ghost" href="https://dash.cloudflare.com/" target="_blank">Cloudflare →</a>
     </div>
   </div>
 
@@ -564,10 +840,15 @@ small{color:var(--muted)}
           <tr><td>llms.txt</td><td><span class="badge on">Published</span></td><td>Structured signal for LLM ingestion</td></tr>
           <tr><td>Cloudflare AI Crawl Control</td><td><span class="badge on">Allow</span></td><td>Search + Agent + Training bots all permitted</td></tr>
           <tr><td>Dashboard access</td><td><span class="badge on">Active</span></td><td>DASHBOARD_TOKEN cookie set (you're logged in)</td></tr>
-          <tr><td>Google Search Console</td><td><span class="badge pending">Verify</span></td><td>Use GTM as the verification method</td></tr>
-          <tr><td>Bing Webmaster Tools</td><td><span class="badge pending">Verify</span></td><td>Same GTM verification path</td></tr>
-          <tr><td>Cloudflare Web Analytics</td><td><span class="badge pending">Enable</span></td><td>Dashboard → Analytics → Enable, paste site tag to me</td></tr>
-          <tr><td>Worker AI-bot telemetry (KV storage)</td><td><span id="kvBadge" class="badge pending">Optional</span></td><td>Bind LEADS_KV to store bot/referrer counters + weekly lead digest history. Without KV: dashboard shows empty AEO panel and no Monday digest email.</td></tr>
+          <tr><td>Google Search Console (verify)</td><td><span class="badge on">Done</span></td><td>Sitemap submitted</td></tr>
+          <tr><td>Bing Webmaster Tools (verify)</td><td><span class="badge on">Done</span></td><td>Sitemap submitted</td></tr>
+          <tr><td>Cloudflare Web Analytics</td><td><span class="badge on">Enabled</span></td><td>Auto-inject at the edge (no snippet needed)</td></tr>
+          <tr><td>Worker AI-bot telemetry (KV)</td><td><span id="kvBadge" class="badge pending">Optional</span></td><td>Bind LEADS_KV to store bot/referrer counters + weekly lead digest history</td></tr>
+          <tr><td colspan="3" style="padding-top:22px;font-weight:700;color:var(--brand)">API access to see data live on this dashboard →</td></tr>
+          <tr><td><code>CF_ANALYTICS_TOKEN</code> + <code>CF_ZONE_ID</code></td><td><span id="secCf" class="badge pending">Set</span></td><td>Cloudflare API token (Account+Zone Analytics: Read) + zone ID from CF overview. Powers the CF Web Analytics card.</td></tr>
+          <tr><td><code>BING_WEBMASTER_KEY</code></td><td><span id="secBing" class="badge pending">Set</span></td><td>Bing Webmaster → Settings → API Access → generate key. Powers the Bing card.</td></tr>
+          <tr><td><code>GSC_SERVICE_ACCOUNT_JSON</code></td><td><span id="secGsc" class="badge pending">Set</span></td><td>GCP service account JSON key. Add the service account client_email as a User on the GSC property. Powers the GSC card.</td></tr>
+          <tr><td><code>GA4_SERVICE_ACCOUNT_JSON</code> + <code>GA4_PROPERTY_ID</code></td><td><span id="secGa4" class="badge pending">Set</span></td><td>Can be the same GCP service account. Add its client_email as a User on the GA4 property. Powers the GA4 card.</td></tr>
         </tbody>
       </table>
     </div>
@@ -605,9 +886,110 @@ function fmtRel(ts) {
 }
 function esc(s) { return String(s || '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])); }
 
+function num(x) { return (x == null ? 0 : Number(x)).toLocaleString(); }
+function pct(x) { return (Math.round((x || 0) * 1000) / 10) + '%'; }
+function shortPath(p) { return String(p || '').replace(/^https?:\\/\\/[^\\/]+/, ''); }
+
+function renderConfigured(box, note) {
+  box.innerHTML = '<div class="note" style="margin:0"><strong>Not configured yet.</strong> ' + esc(note || '') + '</div>';
+}
+function renderError(box, err) {
+  box.innerHTML = '<div class="note" style="background:#fdecea;border-color:#f4b8b8;color:#7a1418"><strong>Error:</strong> ' + esc(err || '') + '</div>';
+}
+
+async function loadGsc(days) {
+  const box = $('gscBox'); box.innerHTML = '<small>loading GSC...</small>';
+  const r = await (await fetch('/dashboard/api/gsc?days=' + days)).json();
+  if (r.configured === false) { renderConfigured(box, r.note); $('secGsc').className='badge pending'; $('secGsc').textContent='Set'; return; }
+  if (!r.ok) { renderError(box, r.error); $('secGsc').className='badge off'; $('secGsc').textContent='Error'; return; }
+  $('secGsc').className='badge on'; $('secGsc').textContent='Live';
+  const t = r.totals || {};
+  const cards = '<div class="grid">' +
+    '<div class="card"><h3>Clicks</h3><div class="big">' + num(t.clicks) + '</div><div class="sub">' + r.days + 'd</div></div>' +
+    '<div class="card"><h3>Impressions</h3><div class="big">' + num(t.impressions) + '</div><div class="sub">' + r.days + 'd</div></div>' +
+    '<div class="card"><h3>Avg position</h3><div class="big">' + (t.avgPosition || '–') + '</div><div class="sub">Top 25 queries</div></div>' +
+    '</div>';
+  const qrows = (r.queries || []).map(q => '<tr><td><strong>' + esc(q.keys[0]) + '</strong></td>' +
+    '<td class="num">' + num(q.clicks) + '</td><td class="num">' + num(q.impressions) + '</td>' +
+    '<td class="num">' + pct(q.ctr) + '</td><td class="num">' + (q.position ? q.position.toFixed(1) : '–') + '</td></tr>').join('');
+  const prows = (r.pages || []).map(p => '<tr><td><a href="' + esc(p.keys[0]) + '" target="_blank" style="color:var(--brand);text-decoration:none">' + esc(shortPath(p.keys[0])) + '</a></td>' +
+    '<td class="num">' + num(p.clicks) + '</td><td class="num">' + num(p.impressions) + '</td>' +
+    '<td class="num">' + pct(p.ctr) + '</td><td class="num">' + (p.position ? p.position.toFixed(1) : '–') + '</td></tr>').join('');
+  box.innerHTML = cards +
+    '<h4>Top queries</h4>' + (qrows ? '<table><thead><tr><th>Query</th><th class="num">Clicks</th><th class="num">Impr</th><th class="num">CTR</th><th class="num">Pos</th></tr></thead><tbody>'+qrows+'</tbody></table>' : '<small>No query data yet — GSC needs 24–72h after sitemap submission.</small>') +
+    '<h4>Top pages</h4>' + (prows ? '<table><thead><tr><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th><th class="num">CTR</th><th class="num">Pos</th></tr></thead><tbody>'+prows+'</tbody></table>' : '<small>No page data yet.</small>');
+}
+
+async function loadGa4(days) {
+  const box = $('ga4Box'); box.innerHTML = '<small>loading GA4...</small>';
+  const r = await (await fetch('/dashboard/api/ga4?days=' + days)).json();
+  if (r.configured === false) { renderConfigured(box, r.note); $('secGa4').className='badge pending'; $('secGa4').textContent='Set'; return; }
+  if (!r.ok) { renderError(box, r.error); $('secGa4').className='badge off'; $('secGa4').textContent='Error'; return; }
+  $('secGa4').className='badge on'; $('secGa4').textContent='Live';
+  const t = (r.totals && r.totals.metricValues) || [];
+  const cards = '<div class="grid">' +
+    '<div class="card"><h3>Sessions</h3><div class="big">' + num(t[0] && t[0].value) + '</div><div class="sub">' + r.days + 'd</div></div>' +
+    '<div class="card"><h3>Users</h3><div class="big">' + num(t[1] && t[1].value) + '</div><div class="sub">' + r.days + 'd</div></div>' +
+    '<div class="card"><h3>Page views</h3><div class="big">' + num(t[2] && t[2].value) + '</div><div class="sub">' + r.days + 'd</div></div>' +
+    '<div class="card"><h3>Engagement</h3><div class="big">' + (t[3] ? pct(parseFloat(t[3].value)) : '–') + '</div><div class="sub">Engaged sessions rate</div></div>' +
+    '</div>';
+  const prows = (r.pages || []).map(row => {
+    const p = row.dimensionValues[0].value, m = row.metricValues;
+    return '<tr><td><a href="' + esc(p) + '" target="_blank" style="color:var(--brand);text-decoration:none">' + esc(p) + '</a></td>' +
+           '<td class="num">' + num(m[0].value) + '</td><td class="num">' + num(m[1].value) + '</td></tr>';
+  }).join('');
+  const srows = (r.sources || []).map(row => {
+    const s = row.dimensionValues[0].value, m = row.metricValues;
+    return '<tr><td><strong>' + esc(s) + '</strong></td><td class="num">' + num(m[0].value) + '</td><td class="num">' + num(m[1].value) + '</td></tr>';
+  }).join('');
+  box.innerHTML = cards +
+    '<h4>Top pages</h4>' + (prows ? '<table><thead><tr><th>URL</th><th class="num">Views</th><th class="num">Users</th></tr></thead><tbody>'+prows+'</tbody></table>' : '<small>No data yet.</small>') +
+    '<h4>Traffic sources</h4>' + (srows ? '<table><thead><tr><th>Source</th><th class="num">Sessions</th><th class="num">Users</th></tr></thead><tbody>'+srows+'</tbody></table>' : '<small>No data yet.</small>');
+}
+
+async function loadBing(days) {
+  const box = $('bingBox'); box.innerHTML = '<small>loading Bing...</small>';
+  const r = await (await fetch('/dashboard/api/bing')).json();
+  if (r.configured === false) { renderConfigured(box, r.note); $('secBing').className='badge pending'; $('secBing').textContent='Set'; return; }
+  if (!r.ok) { renderError(box, r.error); $('secBing').className='badge off'; $('secBing').textContent='Error'; return; }
+  $('secBing').className='badge on'; $('secBing').textContent='Live';
+  const qrows = (r.queries || []).map(q => '<tr><td><strong>' + esc(q.Query) + '</strong></td>' +
+    '<td class="num">' + num(q.Clicks) + '</td><td class="num">' + num(q.Impressions) + '</td>' +
+    '<td class="num">' + num(q.AvgClickPosition) + '</td><td class="num">' + num(q.AvgImpressionPosition) + '</td></tr>').join('');
+  const prows = (r.pages || []).map(p => '<tr><td><a href="' + esc(p.Query) + '" target="_blank" style="color:var(--brand);text-decoration:none">' + esc(shortPath(p.Query)) + '</a></td>' +
+    '<td class="num">' + num(p.Clicks) + '</td><td class="num">' + num(p.Impressions) + '</td></tr>').join('');
+  box.innerHTML =
+    '<h4>Top queries (Bing)</h4>' + (qrows ? '<table><thead><tr><th>Query</th><th class="num">Clicks</th><th class="num">Impr</th><th class="num">Click Pos</th><th class="num">Impr Pos</th></tr></thead><tbody>'+qrows+'</tbody></table>' : '<small>No query data yet.</small>') +
+    '<h4>Top pages</h4>' + (prows ? '<table><thead><tr><th>URL</th><th class="num">Clicks</th><th class="num">Impr</th></tr></thead><tbody>'+prows+'</tbody></table>' : '<small>No page data yet.</small>');
+}
+
+async function loadCf(days) {
+  const box = $('cfBox'); box.innerHTML = '<small>loading Cloudflare Analytics...</small>';
+  const r = await (await fetch('/dashboard/api/cf-analytics?days=' + days)).json();
+  if (r.configured === false) { renderConfigured(box, r.note); $('secCf').className='badge pending'; $('secCf').textContent='Set'; return; }
+  if (!r.ok) { renderError(box, r.error); $('secCf').className='badge off'; $('secCf').textContent='Error'; return; }
+  $('secCf').className='badge on'; $('secCf').textContent='Live';
+  const total = (r.totals && r.totals.count) || 0;
+  const cards = '<div class="grid">' +
+    '<div class="card"><h3>Page views</h3><div class="big">' + num(total) + '</div><div class="sub">' + r.days + 'd, edge-measured</div></div>' +
+    '</div>';
+  const prows = (r.byPath || []).map(row => '<tr><td><a href="' + esc(row.dimensions.requestPath) + '" target="_blank" style="color:var(--brand);text-decoration:none">' + esc(row.dimensions.requestPath) + '</a></td>' +
+    '<td class="num">' + num(row.count) + '</td></tr>').join('');
+  const crows = (r.byCountry || []).map(row => '<tr><td>' + esc(row.dimensions.countryName || '?') + '</td><td class="num">' + num(row.count) + '</td></tr>').join('');
+  const rrows = (r.byReferer || []).map(row => '<tr><td>' + esc(row.dimensions.refererHost || '(direct)') + '</td><td class="num">' + num(row.count) + '</td></tr>').join('');
+  box.innerHTML = cards +
+    '<h4>Top pages (real visitors)</h4>' + (prows ? '<table><thead><tr><th>URL</th><th class="num">Views</th></tr></thead><tbody>'+prows+'</tbody></table>' : '<small>No visitor data yet — Cloudflare Web Analytics starts collecting after enable + first page load.</small>') +
+    '<h4>By country</h4>' + (crows ? '<table><thead><tr><th>Country</th><th class="num">Views</th></tr></thead><tbody>'+crows+'</tbody></table>' : '<small>No data yet.</small>') +
+    '<h4>Top referrers</h4>' + (rrows ? '<table><thead><tr><th>Source</th><th class="num">Views</th></tr></thead><tbody>'+rrows+'</tbody></table>' : '<small>No data yet.</small>');
+}
+
+$('seoDays').addEventListener('change', () => { const d = $('seoDays').value; loadGsc(d); loadGa4(d); loadBing(d); loadCf(d); });
+
 async function load(days) {
   days = days || 30;
   $('aeoDays').textContent = days; $('aeoDays2').textContent = days;
+  const seoDays = $('seoDays').value;
+  loadGsc(seoDays); loadGa4(seoDays); loadBing(seoDays); loadCf(seoDays);
   const r = await fetch('/dashboard/api/summary?days=' + days);
   const d = await r.json();
   if (!d.ok) { alert(d.error || 'load failed'); return; }
@@ -687,7 +1069,11 @@ export default {
     }
     // Dashboard UI + summary API
     if (p === "/dashboard" || p === "/dashboard/") return dashboardUI(request, env);
-    if (p === "/dashboard/api/summary" && request.method === "GET") return dashboardSummary(request, env);
+    if (p === "/dashboard/api/summary"      && request.method === "GET") return dashboardSummary(request, env);
+    if (p === "/dashboard/api/gsc"          && request.method === "GET") return endpointGsc(request, env);
+    if (p === "/dashboard/api/ga4"          && request.method === "GET") return endpointGa4(request, env);
+    if (p === "/dashboard/api/bing"         && request.method === "GET") return endpointBing(request, env);
+    if (p === "/dashboard/api/cf-analytics" && request.method === "GET") return endpointCfAnalytics(request, env);
     // Log telemetry (AI bot + AI referrer + page views) — async, doesn't
     // delay the response.
     ctx.waitUntil(logTelemetry(request, env, url).catch(() => {}));
