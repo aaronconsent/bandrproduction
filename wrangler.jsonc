@@ -8,7 +8,11 @@
   },
   "assets": {
     "directory": ".",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // Run the Worker for every request first. Without this, Cloudflare
+    // Assets intercepts GETs to non-existent paths with a bare 404 before
+    // the Worker sees them — which breaks /outreach/api/list etc.
+    "run_worker_first": true
   },
   "compatibility_flags": [
     "nodejs_compat"
