@@ -18,9 +18,7 @@
     "nodejs_compat"
   ],
   "triggers": {
-    // Daily 13:00 UTC ≈ 08:00 America/Chicago.
-    // Scheduled handler branches: Mondays run the weekly lead digest,
-    // every day checks for outreach follow-ups due and mails a reminder if any.
-    "crons": ["0 13 * * *"]
+    // Monday 13:00 UTC ≈ 08:00 America/Chicago — weekly lead digest email
+    "crons": ["0 13 * * 1"]
   }
 }
