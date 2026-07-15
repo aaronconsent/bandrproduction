@@ -336,8 +336,10 @@ async function logTelemetry(request, env, url) {
 // helpful "configure me" prompt per source instead of an error.
 //
 // Required Worker secrets (all optional; add whichever you want):
-//   CF_ANALYTICS_TOKEN         — Cloudflare API token (Account+Zone Analytics: Read)
-//   CF_ZONE_ID                 — bandrproduction.com zone ID (CF dashboard overview)
+//   CF_ANALYTICS_TOKEN         — Cloudflare API token (Account Analytics: Read)
+//   CF_ACCOUNT_ID              — Cloudflare account ID (32-char hex in dash URL)
+//   CF_WEB_ANALYTICS_SITE_TAG  — optional; filters RUM data to one site tag
+//                                (dash.cloudflare.com/<account>/web-analytics/<siteTag>)
 //   BING_WEBMASTER_KEY         — Bing Webmaster Tools API key
 //   BING_SITE_URL              — usually "https://bandrproduction.com/" (default)
 //   GSC_SERVICE_ACCOUNT_JSON   — Google Cloud service account JSON key (full blob)
@@ -507,29 +509,37 @@ async function bingSummary(env) {
 }
 
 // ---- Cloudflare Web Analytics via GraphQL Analytics API ----
+// Web Analytics (RUM) data lives under viewer.accounts[], scoped by siteTag
+// (the Web Analytics site's 32-char hex — different from Zone ID). Zone-level
+// analytics (httpRequestsAdaptiveGroups) is a different product; we use the
+// RUM path because that's what the auto-injected beacon populates.
 async function cfAnalyticsSummary(env, days) {
-  if (!env.CF_ANALYTICS_TOKEN || !env.CF_ZONE_ID) {
-    return { ok: true, configured: false, note: "Set CF_ANALYTICS_TOKEN (Cloudflare API token with Account+Zone Analytics: Read) and CF_ZONE_ID (from Cloudflare zone overview) as Worker Secrets." };
+  if (!env.CF_ANALYTICS_TOKEN || !env.CF_ACCOUNT_ID) {
+    return { ok: true, configured: false, note: "Set CF_ANALYTICS_TOKEN (Cloudflare API token with Account Analytics: Read) and CF_ACCOUNT_ID (32-char hex, visible in the CF dashboard URL) as Worker Secrets. Optionally set CF_WEB_ANALYTICS_SITE_TAG to filter to one site (found in the Web Analytics dashboard URL: dash.cloudflare.com/<account>/web-analytics/<siteTag>)." };
   }
   const end = new Date().toISOString();
   const start = new Date(Date.now() - days * 86400000).toISOString();
-  const query = `query GetRUM($zoneTag: String!, $start: Time!, $end: Time!) {
+  const site = env.CF_WEB_ANALYTICS_SITE_TAG;
+  const filterCore = site
+    ? `datetime_geq: $start, datetime_leq: $end, siteTag: "${site}"`
+    : `datetime_geq: $start, datetime_leq: $end`;
+  const query = `query GetRUM($accountTag: String!, $start: Time!, $end: Time!) {
     viewer {
-      zones(filter: {zoneTag: $zoneTag}) {
-        totals: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, limit: 1) { count }
-        byPath: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 25) {
+      accounts(filter: {accountTag: $accountTag}) {
+        totals: rumPageloadEventsAdaptiveGroups(filter: {${filterCore}}, limit: 1) { count }
+        byPath: rumPageloadEventsAdaptiveGroups(filter: {${filterCore}}, orderBy: [count_DESC], limit: 25) {
           count
           dimensions { requestPath }
         }
-        byCountry: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 15) {
+        byCountry: rumPageloadEventsAdaptiveGroups(filter: {${filterCore}}, orderBy: [count_DESC], limit: 15) {
           count
           dimensions { countryName }
         }
-        byDevice: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 5) {
+        byDevice: rumPageloadEventsAdaptiveGroups(filter: {${filterCore}}, orderBy: [count_DESC], limit: 5) {
           count
           dimensions { deviceType }
         }
-        byReferer: rumPageloadEventsAdaptiveGroups(filter: {datetime_geq: $start, datetime_leq: $end}, orderBy: [count_DESC], limit: 15) {
+        byReferer: rumPageloadEventsAdaptiveGroups(filter: {${filterCore}}, orderBy: [count_DESC], limit: 15) {
           count
           dimensions { refererHost }
         }
@@ -540,15 +550,15 @@ async function cfAnalyticsSummary(env, days) {
     const r = await fetch("https://api.cloudflare.com/client/v4/graphql", {
       method: "POST",
       headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables: { zoneTag: env.CF_ZONE_ID, start, end } }),
+      body: JSON.stringify({ query, variables: { accountTag: env.CF_ACCOUNT_ID, start, end } }),
     });
     const j = await r.json();
     if (!r.ok || j.errors) {
       throw new Error(`CF Analytics ${r.status}: ${(j.errors && j.errors[0] && j.errors[0].message) || JSON.stringify(j).slice(0, 200)}`);
     }
-    const z = j.data && j.data.viewer && j.data.viewer.zones && j.data.viewer.zones[0];
-    if (!z) throw new Error("no zone data (check CF_ZONE_ID + token permissions)");
-    return { ok: true, configured: true, days, totals: (z.totals && z.totals[0]) || null, byPath: z.byPath || [], byCountry: z.byCountry || [], byDevice: z.byDevice || [], byReferer: z.byReferer || [] };
+    const a = j.data && j.data.viewer && j.data.viewer.accounts && j.data.viewer.accounts[0];
+    if (!a) throw new Error("no account data (check CF_ACCOUNT_ID + token permissions)");
+    return { ok: true, configured: true, days, siteTag: site || null, totals: (a.totals && a.totals[0]) || null, byPath: a.byPath || [], byCountry: a.byCountry || [], byDevice: a.byDevice || [], byReferer: a.byReferer || [] };
   } catch (e) {
     return { ok: false, configured: true, error: String(e && e.message || e) };
   }
@@ -845,7 +855,7 @@ small{color:var(--muted)}
           <tr><td>Cloudflare Web Analytics</td><td><span class="badge on">Enabled</span></td><td>Auto-inject at the edge (no snippet needed)</td></tr>
           <tr><td>Worker AI-bot telemetry (KV)</td><td><span id="kvBadge" class="badge pending">Optional</span></td><td>Bind LEADS_KV to store bot/referrer counters + weekly lead digest history</td></tr>
           <tr><td colspan="3" style="padding-top:22px;font-weight:700;color:var(--brand)">API access to see data live on this dashboard →</td></tr>
-          <tr><td><code>CF_ANALYTICS_TOKEN</code> + <code>CF_ZONE_ID</code></td><td><span id="secCf" class="badge pending">Set</span></td><td>Cloudflare API token (Account+Zone Analytics: Read) + zone ID from CF overview. Powers the CF Web Analytics card.</td></tr>
+          <tr><td><code>CF_ANALYTICS_TOKEN</code> + <code>CF_ACCOUNT_ID</code></td><td><span id="secCf" class="badge pending">Set</span></td><td>Cloudflare API token (Account Analytics: Read) + Account ID (32-char hex from CF dashboard URL). Optional: <code>CF_WEB_ANALYTICS_SITE_TAG</code> to scope to one site (from the Web Analytics URL path). Powers the CF Web Analytics card.</td></tr>
           <tr><td><code>BING_WEBMASTER_KEY</code></td><td><span id="secBing" class="badge pending">Set</span></td><td>Bing Webmaster → Settings → API Access → generate key. Powers the Bing card.</td></tr>
           <tr><td><code>GSC_SERVICE_ACCOUNT_JSON</code></td><td><span id="secGsc" class="badge pending">Set</span></td><td>GCP service account JSON key. Add the service account client_email as a User on the GSC property. Powers the GSC card.</td></tr>
           <tr><td><code>GA4_SERVICE_ACCOUNT_JSON</code> + <code>GA4_PROPERTY_ID</code></td><td><span id="secGa4" class="badge pending">Set</span></td><td>Can be the same GCP service account. Add its client_email as a User on the GA4 property. Powers the GA4 card.</td></tr>
