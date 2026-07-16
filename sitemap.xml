@@ -26,7 +26,65 @@
   <url><loc>https://bandrproduction.com/capabilities/manual-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/manual-milling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/faq/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/17-4-ph-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/4140-4340-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/aerospace-structural-bracket-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/american-vs-korean-cnc-lathes-oilfield/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/api-6a-machining-processes/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/best-feeds-speeds-inconel-718-hwacheon/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/best-insert-super-duplex-2507/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/can-cnc-lathe-drill-deep-holes/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/chip-evacuation-inconel-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/choke-body-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/cnc-machining-cost-oilfield-parts/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/cnc-shop-certifications-that-matter-for-oil-gas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/cnc-tool-life-troubleshooting/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/concentricity-failures-turned-oilfield-parts/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/cost-drivers-small-batch-vs-production/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/downhole-tool-body-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/fadal-vmc-4020-inconel-milling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/forgings-vs-bar-stock-cnc/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/frac-pump-fluid-end-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/frac-pump-plunger-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/gate-valve-body-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/gundrilling-oilfield-lathe-limitations/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/gundrilling-vs-bta-vs-conventional-drilling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-fast-cnc-shop-turn-a-part/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-to-avoid-work-hardening-17-4-ph/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-to-choose-a-cnc-machine-shop-for-oil-gas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-to-choose-cnc-shop-for-aerospace/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-to-choose-cnc-shop-for-defense-programs/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-to-evaluate-cnc-shop-alloy-expertise/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/how-to-evaluate-cnc-shop-quality-management/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/inconel-718-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/inconel-718-vs-625-selection/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/inconel-718-work-hardening-prevention/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/iso-9001-vs-api-q1-machine-shops/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/material-traceability-heat-lot-oilfield/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/material-verification-red-flags/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/guides/materials-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/monel-k-500-cnc-machining-tips/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/monel-k-500-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/nitronic-50-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/oilfield-machining-lead-times-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/questions-to-ask-a-cnc-supplier-before-you-quote/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/realistic-emergency-lead-times-cnc/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/red-flags-when-evaluating-a-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/reverse-engineering-oilfield-parts-process/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/subsea-connector-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/super-duplex-2507-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/super-duplex-vs-inconel-selection/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/surface-finish-vs-sealing-performance/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/titanium-grade-5-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/unisig-deep-hole-vs-lathe-boring/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/wellhead-spool-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/what-drives-cost-inconel-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/what-drives-cost-super-duplex-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/when-outsourcing-cnc-machining-makes-sense/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/why-17-4-ph-parts-crack-in-service/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/why-super-duplex-2507-parts-fail-after-install/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/guides/wireline-tool-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/industries/aerospace-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/industries/industrial-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/industries/military-defense-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
