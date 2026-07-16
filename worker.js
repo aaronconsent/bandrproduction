@@ -1072,6 +1072,17 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
+    // /robots.txt — served directly by the Worker so Cloudflare's
+    // "Managed robots.txt" AI-blocking injection can't override it.
+    // Aaron's AEO strategy is to WELCOME AI crawlers so we can be cited
+    // by ChatGPT/Claude/Perplexity/Google AI. A single Allow rule + sitemap
+    // pointer is the correct minimum.
+    if (p === "/robots.txt") {
+      return new Response(
+        "User-agent: *\nAllow: /\n\nSitemap: https://bandrproduction.com/sitemap.xml\n",
+        { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" } }
+      );
+    }
     // Quote form endpoint
     if (p === "/api/quote") {
       if (request.method === "POST") return handleQuote(request, env, ctx);
