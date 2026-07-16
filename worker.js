@@ -1072,6 +1072,14 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
+    // Trailing-slash canonicalization: our sitemap uses trailing slashes on
+    // directory-style URLs, but Google/GA4 was seeing both /foo and /foo/ as
+    // distinct pages (splits link equity + analytics). 301-redirect the
+    // no-slash form to the trailing-slash form. Skip: root, API/admin paths,
+    // and anything with a file extension.
+    if (p !== "/" && !p.endsWith("/") && !p.startsWith("/api/") && !p.startsWith("/dashboard") && !p.startsWith("/cdn-cgi/") && !/\.[a-z0-9]+$/i.test(p)) {
+      return Response.redirect(url.origin + p + "/" + url.search, 301);
+    }
     // /robots.txt — served directly by the Worker so Cloudflare's
     // "Managed robots.txt" AI-blocking injection can't override it.
     // Aaron's AEO strategy is to WELCOME AI crawlers so we can be cited

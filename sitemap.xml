@@ -25,6 +25,7 @@
   <url><loc>https://bandrproduction.com/capabilities/cnc-turning/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/manual-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/manual-milling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/faq/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/guides/materials-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/industries/aerospace-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/industries/industrial-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
@@ -39,6 +40,7 @@
   <url><loc>https://bandrproduction.com/services/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/api-6a-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/downhole-tool-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/services/emergency-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/frac-pump-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/inconel-machining-texas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/subsea-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
@@ -46,4 +48,20 @@
   <url><loc>https://bandrproduction.com/services/wellhead-component-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/wireline-tool-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/terms-of-service/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/fadal-cnc-milling-aerospace/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/fadal-cnc-milling-defense/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/fadal-cnc-milling-industrial/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/fadal-cnc-milling-oil-gas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/fadal-cnc-milling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/hwacheon-cnc-turning-aerospace/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/hwacheon-cnc-turning-defense/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/hwacheon-cnc-turning-industrial/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/hwacheon-cnc-turning-oil-gas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/hwacheon-cnc-turning/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/unisig-deep-hole-drilling-aerospace/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/unisig-deep-hole-drilling-defense/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/unisig-deep-hole-drilling-industrial/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/unisig-deep-hole-drilling-oil-gas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/whitepapers/unisig-deep-hole-drilling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
 </urlset>
