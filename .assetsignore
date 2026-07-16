@@ -3,3 +3,4 @@
 .assetsignore
 worker.js
 wrangler.jsonc
+.github

@@ -1,0 +1,76 @@
+name: Build whitepaper PDFs
+
+# Runs after any whitepaper HTML change on main. Uses headless Chromium
+# (Playwright) to render each whitepaper URL as a print-styled PDF and
+# commits the resulting files back to /site/whitepapers/*.pdf. That
+# second commit triggers Cloudflare Workers Build, which publishes the
+# PDFs alongside the HTML.
+#
+# We serve the local site/ directory via http-server rather than hitting
+# the live production URL — this way the workflow works even if the
+# Cloudflare deploy hasn't landed yet and doesn't require polling.
+#
+# The commit is tagged [skip ci] to prevent the workflow from re-firing
+# on its own PDF-only commit. CF Workers Build ignores that marker and
+# still deploys the PDFs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'whitepapers/**/index.html'
+      - '.github/workflows/build-pdfs.yml'
+      - '.github/scripts/build-pdfs.js'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-pdfs
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright + http-server
+        run: |
+          npm init -y > /dev/null
+          npm install --no-save --silent playwright http-server
+
+      - name: Install Chromium browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start local static server
+        run: |
+          npx http-server . -p 8080 -s -c-1 &
+          for i in 1 2 3 4 5; do
+            if curl -sf http://localhost:8080/ >/dev/null; then
+              echo "Server up"; break
+            fi
+            sleep 1
+          done
+
+      - name: Generate PDFs
+        run: node .github/scripts/build-pdfs.js
+
+      - name: Commit and push PDFs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add whitepapers/*.pdf
+          if git diff --cached --quiet; then
+            echo "No PDF changes to commit"
+          else
+            count=$(git diff --cached --name-only | wc -l | tr -d ' ')
+            git commit -m "Auto-generate ${count} whitepaper PDFs [skip ci]"
+            git push
+          fi
