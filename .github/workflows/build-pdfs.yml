@@ -71,6 +71,8 @@ jobs:
             echo "No PDF changes to commit"
           else
             count=$(git diff --cached --name-only | wc -l | tr -d ' ')
-            git commit -m "Auto-generate ${count} whitepaper PDFs [skip ci]"
+            # Use [skip actions] (GH-Actions-specific) instead of [skip ci]
+            # so Cloudflare Workers Build still deploys the new PDFs.
+            git commit -m "Auto-generate ${count} whitepaper PDFs [skip actions]"
             git push
           fi
