@@ -1078,9 +1078,15 @@ async function load(days) {
   if (!d.kv) { $('kvBadge').className = 'badge off'; $('kvBadge').textContent = 'not bound'; }
   else { $('kvBadge').className = 'badge on'; $('kvBadge').textContent = 'active'; }
 
-  // SEO cards
-  const urlCount = 46; // sitemap URL count — kept static for the header stat
-  $('urlCount').textContent = urlCount;
+  // SEO cards — fetch actual sitemap URL count on each dashboard load so it stays fresh.
+  $('urlCount').textContent = '…';
+  fetch('/sitemap.xml', {cache: 'no-store'})
+    .then(function(r){ return r.text(); })
+    .then(function(xml){
+      var m = xml.match(/<loc>/g);
+      $('urlCount').textContent = m ? m.length : '—';
+    })
+    .catch(function(){ $('urlCount').textContent = '—'; });
   const pvTotal = Object.values(d.pv || {}).reduce((a,b) => a + b, 0);
   $('pvTotal').textContent = pvTotal || (d.kv ? '0' : '—');
 
