@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script id="mirror-durable-block">(function(){function b(u){return typeof u==="string"&&u.indexOf("api.durable.co")>-1;}var of=window.fetch;if(of)window.fetch=function(i){var u=(i&&i.url)||i;if(b(u))return Promise.resolve(new Response("{}",{status:200,headers:{"Content-Type":"application/json"}}));return of.apply(this,arguments);};var oo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,u){this.__b=b(u);return oo.apply(this,arguments);};var os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){if(this.__b)return;return os.apply(this,arguments);};var sb=navigator.sendBeacon&&navigator.sendBeacon.bind(navigator);if(sb)navigator.sendBeacon=function(u){if(b(u))return true;return sb.apply(navigator,arguments);};})();</script><script id="mirror-next-image">(function(){function loc(v){return v.replace(/\/_next\/image\?url=([^&"\x27\s,]+)[^"\x27\s,]*/g,function(m,e){try{var u=decodeURIComponent(e);var i=u.indexOf("cdn.durable.co/");if(i>-1)return "/_external/cdn.durable.co/"+u.slice(i+15);}catch(x){}return m;});}function fix(el){if(!el.getAttribute)return;var a=["src","srcset"];for(var k=0;k<a.length;k++){var v=el.getAttribute(a[k]);if(v&&v.indexOf("/_next/image")>-1){var nv=loc(v);if(nv!==v)el.setAttribute(a[k],nv);}}}function scan(r){if(!r)return;if(r.tagName==="IMG"||r.tagName==="SOURCE")fix(r);if(r.querySelectorAll){var n=r.querySelectorAll("img,source");for(var i=0;i<n.length;i++)fix(n[i]);}}var mo=new MutationObserver(function(ms){for(var j=0;j<ms.length;j++){var m=ms[j];if(m.type==="attributes"){fix(m.target);}else if(m.addedNodes){for(var i=0;i<m.addedNodes.length;i++)scan(m.addedNodes[i]);}}});function start(){scan(document);mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:["src","srcset"]});}if(document.readyState!=="loading")start();else document.addEventListener("DOMContentLoaded",start);})();</script>
+<head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Choke Body Machining: Trim Seats, Bore Precision, Alloys</title>
@@ -27,22 +27,22 @@ html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe
 a{color:var(--brand)}
 .wrap{max-width:1100px;margin:0 auto;padding:0 24px}
 
-.site-header{background:#fff;color:#000;position:sticky;top:0;z-index:2000;border-bottom:1px solid #eee}
+.site-header{background:#0d0d0d;color:#fff;position:sticky;top:0;z-index:2000;border-bottom:1px solid #1a1a1a}
 .site-header .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;flex-wrap:wrap;max-width:1280px}
-.site-header .brand img{display:block;height:75px;width:auto;max-width:240px;object-fit:contain}
+.site-header .brand img{display:block;height:75px;width:auto;max-width:240px;object-fit:contain;filter:brightness(0) invert(1)}
 .site-nav{display:flex;align-items:center;gap:0;flex-wrap:wrap}
-.site-nav>a,.site-nav>.has-menu>span{color:#000;text-decoration:none;font-weight:400;font-size:15px;padding:8px 14px;cursor:pointer;line-height:1.5;transition:color .15s;display:inline-flex;align-items:center;gap:6px}
+.site-nav>a,.site-nav>.has-menu>span{color:#fff;text-decoration:none;font-weight:500;font-size:15px;padding:8px 14px;cursor:pointer;line-height:1.5;transition:color .15s;display:inline-flex;align-items:center;gap:6px}
 .site-nav>a:hover,.site-nav>.has-menu>span:hover{color:var(--brand)}
 .site-nav .has-menu{position:relative}
 .site-nav .has-menu>span::after{content:"";display:inline-block;width:8px;height:8px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-left:2px;margin-top:-3px}
-.site-nav .menu{position:absolute;top:100%;left:0;background:#fff;border:1px solid #e0e0e0;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.08);padding:8px 0;min-width:220px;opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .15s,transform .15s,visibility .15s;list-style:none;margin:0;z-index:3000}
+.site-nav .menu{position:absolute;top:100%;left:0;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:8px 0;min-width:220px;opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .15s,transform .15s,visibility .15s;list-style:none;margin:0;z-index:3000}
 .site-nav .has-menu:hover .menu,.site-nav .has-menu:focus-within .menu{opacity:1;visibility:visible;transform:translateY(0)}
-.site-nav .menu a{display:block;padding:10px 18px;color:#000;text-decoration:none;font-size:14.5px;line-height:1.4;white-space:nowrap}
-.site-nav .menu a:hover{background:#F4F5F6;color:var(--brand)}
+.site-nav .menu a{display:block;padding:10px 18px;color:#c9d1da;text-decoration:none;font-size:14.5px;line-height:1.4;white-space:nowrap}
+.site-nav .menu a:hover{background:#1a1a1a;color:#fff}
 .site-nav .cta{background:var(--brand);color:#fff!important;padding:10px 22px;border-radius:22px;font-weight:600;margin-left:14px}
 .site-nav .cta:hover{background:var(--brand-2);color:#fff!important}
-.site-nav .phone{color:#000!important;font-weight:600;padding-left:18px}
-.site-nav .phone:hover{color:var(--brand)!important}
+.site-nav .phone{color:#fff!important;font-weight:600;border:1.5px solid rgba(255,255,255,0.25);border-radius:22px;padding:8px 18px;margin-left:8px}
+.site-nav .phone:hover{color:var(--brand)!important;border-color:var(--brand)}
 @media (max-width:900px){.site-header .wrap{padding:12px 18px}.site-header .brand img{height:44px}.site-nav>a,.site-nav>.has-menu>span{padding:6px 10px;font-size:14px}.site-nav .menu{position:static;box-shadow:none;border:0;opacity:1;visibility:visible;transform:none;padding:0 0 0 12px;min-width:0}.site-nav .menu a{padding:4px 8px;font-size:13px}}
 main{padding:36px 0 48px}
 
