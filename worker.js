@@ -586,8 +586,15 @@ async function bingSummary(env) {
 // analytics (httpRequestsAdaptiveGroups) is a different product; we use the
 // RUM path because that's what the auto-injected beacon populates.
 async function cfAnalyticsSummary(env, days) {
-  if (!env.CF_ANALYTICS_TOKEN || !env.CF_ACCOUNT_ID) {
-    return { ok: true, configured: false, note: "Set CF_ANALYTICS_TOKEN (Cloudflare API token with Account Analytics: Read) and CF_ACCOUNT_ID (32-char hex, visible in the CF dashboard URL) as Worker Secrets. Optionally set CF_WEB_ANALYTICS_SITE_TAG to filter to one site (found in the Web Analytics dashboard URL: dash.cloudflare.com/<account>/web-analytics/<siteTag>)." };
+  // Accept either CF_ACCOUNT_ID (current name) or CF_ZONE_ID (legacy name
+  // from an earlier version of this Worker) as the account tag, so a rename
+  // in the code doesn't strand an existing Cloudflare secret.
+  const accountTag = env.CF_ACCOUNT_ID || env.CF_ZONE_ID;
+  if (!env.CF_ANALYTICS_TOKEN || !accountTag) {
+    const missing = [];
+    if (!env.CF_ANALYTICS_TOKEN) missing.push("CF_ANALYTICS_TOKEN");
+    if (!accountTag) missing.push("CF_ACCOUNT_ID");
+    return { ok: true, configured: false, note: "Missing " + missing.join(" + ") + ". Set CF_ANALYTICS_TOKEN (Cloudflare API token with Account Analytics: Read) and CF_ACCOUNT_ID (32-char hex — find it at dash.cloudflare.com, the hash after /<account>/ in any URL) as Worker Secrets. Optionally set CF_WEB_ANALYTICS_SITE_TAG to filter to one site (from dash.cloudflare.com/<account>/web-analytics/<siteTag>)." };
   }
   const end = new Date().toISOString();
   const start = new Date(Date.now() - days * 86400000).toISOString();
@@ -622,7 +629,7 @@ async function cfAnalyticsSummary(env, days) {
     const r = await fetch("https://api.cloudflare.com/client/v4/graphql", {
       method: "POST",
       headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables: { accountTag: env.CF_ACCOUNT_ID, start, end } }),
+      body: JSON.stringify({ query, variables: { accountTag, start, end } }),
     });
     const j = await r.json();
     if (!r.ok || j.errors) {
