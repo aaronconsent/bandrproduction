@@ -104,86 +104,106 @@ details.faq p{margin:10px 0 4px;color:var(--muted);font-size:14.5px;line-height:
 </style>
 
 <style>
-/* Homepage-specific polish over the shared pagelib design system. */
+/* Homepage-specific polish, matching the industry-page visual language.
+   Responsive rounded corners (0.5rem → 0.75rem → 1rem), roomier max-width,
+   larger hero, subtler shadows, image-forward industry cards. */
 .home-wrap main{padding-top:0}
 main{padding-top:0}
 
 /* --- Hero: bigger H1, tighter lede, elegant image frame --- */
-.home-hero{padding:44px 0 24px}
-.home-hero h1{font-size:52px;line-height:1.08;letter-spacing:-.02em;font-weight:800;color:var(--ink)}
-.home-hero .lede{font-size:19.5px;line-height:1.55;color:var(--muted);max-width:56ch}
+.home-hero{padding:56px 0 32px}
+.home-hero h1{font-size:56px;line-height:1.06;letter-spacing:-.022em;font-weight:800;color:var(--ink);margin:8px 0 14px}
+.home-hero .lede{font-size:20px;line-height:1.55;color:var(--muted);max-width:56ch}
 .home-hero .eyebrow{color:var(--brand);font-weight:700;letter-spacing:.12em;font-size:12.5px;text-transform:uppercase;margin-bottom:4px}
-.home-hero .hero-img{position:relative;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px -20px rgba(15,30,58,0.35),0 6px 22px rgba(15,30,58,0.10);aspect-ratio:4/3;background:#0f1e3a}
-.home-hero .hero-img img{width:100%;height:100%;object-fit:cover;display:block}
+.home-hero .hero-img{position:relative;border-radius:20px;overflow:hidden;box-shadow:0 22px 60px -22px rgba(15,30,58,0.30),0 8px 22px rgba(15,30,58,0.08);aspect-ratio:4/3;background:#0f1e3a}
+.home-hero .hero-img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s ease}
+.home-hero .hero-img:hover img{transform:scale(1.03)}
 
 /* --- Section rhythm: alternate white and light-gray bands --- */
-.section{padding:64px 0;position:relative}
+.section{padding:72px 0;position:relative}
 .section-gray{background:#F7F8FA}
 .section-dark{background:#0b0b0d;color:#fff}
 .section-dark h2{color:#fff;border-top:0;padding-top:0}
 .section-dark p{color:#c9d1da}
 .section-inner{max-width:1200px;margin:0 auto;padding:0 24px}
-.section h2{font-size:32px;letter-spacing:-.015em;margin-top:0;padding-top:0;border-top:0}
-.section .lede-sm{color:var(--muted);font-size:16.5px;max-width:64ch;margin:0 0 22px}
+.section h2{font-size:34px;letter-spacing:-.018em;line-height:1.18;margin-top:0;padding-top:0;border-top:0;font-weight:800}
+.section .lede-sm{color:var(--muted);font-size:17px;max-width:64ch;margin:0 0 24px;line-height:1.55}
 
 /* --- Partner logos: dark bg + infinite marquee --- */
 .marquee-wrap{position:relative;overflow:hidden;padding:8px 0;mask-image:linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 8%,#000 92%,transparent 100%)}
 .marquee-track{display:flex;gap:28px;width:max-content;animation:marquee-scroll 38s linear infinite}
 .marquee-wrap:hover .marquee-track{animation-play-state:paused}
-.marquee-item{flex:0 0 auto;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:22px 34px;display:flex;align-items:center;justify-content:center;height:104px;min-width:180px}
+.marquee-item{flex:0 0 auto;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:16px;padding:22px 34px;display:flex;align-items:center;justify-content:center;height:104px;min-width:180px}
 .marquee-item img{max-height:60px;max-width:170px;object-fit:contain;filter:brightness(0) invert(1) opacity(.75);transition:filter .25s}
 .marquee-item:hover img{filter:brightness(0) invert(1) opacity(1)}
 @keyframes marquee-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){.marquee-track{animation:none}}
 
-/* --- Industry cards: image on top, chip specs --- */
-.card{border-radius:14px;transition:transform .18s,box-shadow .18s,border-color .18s}
-.card:hover{transform:translateY(-2px);box-shadow:0 14px 40px -12px rgba(15,30,58,0.15)}
-.card .card-img{aspect-ratio:16/10;background:#F4F5F6}
-.card .card-img img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+/* --- Cards: image-forward, subtle border, hover-lift, responsive rounding --- */
+.card{border-radius:12px;transition:transform .2s,box-shadow .2s,border-color .2s}
+.card:hover{transform:translateY(-3px);box-shadow:0 18px 44px -14px rgba(15,30,58,0.16)}
+.card .card-img{aspect-ratio:16/10;background:#F4F5F6;overflow:hidden}
+.card .card-img img{width:100%;height:100%;object-fit:cover;object-position:center;display:block;transition:transform .45s ease}
+.card:hover .card-img img{transform:scale(1.05)}
+@media (min-width:768px){.card{border-radius:16px}}
+@media (min-width:1024px){.card{border-radius:20px}}
 
-/* --- Service-zone cards: numbered "compass" style --- */
+/* --- Service-zone cards --- */
 .zone-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:22px 0}
-.zone-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:22px 24px}
-.zone-card .zone-tag{display:inline-block;background:var(--brand);color:#fff;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:12px;margin-bottom:10px}
-.zone-card p{margin:3px 0;color:var(--ink);font-size:14.5px;line-height:1.55}
+.zone-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px 26px;transition:transform .2s,box-shadow .2s}
+.zone-card:hover{transform:translateY(-2px);box-shadow:0 12px 30px -12px rgba(15,30,58,0.10)}
+.zone-card .zone-tag{display:inline-block;background:var(--brand);color:#fff;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:4px 12px;border-radius:14px;margin-bottom:12px}
+.zone-card p{margin:3px 0;color:var(--ink);font-size:15px;line-height:1.55}
+@media (min-width:768px){.zone-card{border-radius:16px}}
+@media (min-width:1024px){.zone-card{border-radius:20px}}
 
-/* --- Stats bar: bigger, tabular numbers, brand-blue accents --- */
-.stat-bar{grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:22px 0}
-.stat-bar .stat{background:#fff;border:1px solid var(--border);border-radius:14px;padding:24px 26px;transition:transform .18s,box-shadow .18s}
+/* --- Stats bar --- */
+.stat-bar{grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:24px 0}
+.stat-bar .stat{background:#fff;border:1px solid var(--border);border-radius:12px;padding:26px 28px;transition:transform .2s,box-shadow .2s}
 .stat-bar .stat:hover{transform:translateY(-2px);box-shadow:0 12px 30px -12px rgba(15,30,58,0.12)}
-.stat-bar .stat .n{color:var(--brand);font-size:36px;font-weight:800;line-height:1;letter-spacing:-.015em;font-variant-numeric:tabular-nums}
-.stat-bar .stat .l{color:var(--ink);font-size:15px;font-weight:700;margin-top:8px;letter-spacing:-.005em}
+.stat-bar .stat .n{color:var(--brand);font-size:38px;font-weight:800;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat-bar .stat .l{color:var(--ink);font-size:15.5px;font-weight:700;margin-top:10px;letter-spacing:-.005em}
 .stat-bar .stat .desc{color:var(--muted);font-size:13.5px;line-height:1.55;margin-top:6px}
+@media (min-width:768px){.stat-bar .stat{border-radius:16px}}
+@media (min-width:1024px){.stat-bar .stat{border-radius:20px}}
 
-/* --- Testimonial cards: quote-mark decoration --- */
+/* --- Testimonial cards --- */
 .testimonial-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin:24px 0}
-.testimonial{position:relative;background:#fff;border:1px solid var(--border);border-radius:14px;padding:36px 28px 26px;overflow:hidden}
-.testimonial::before{content:"“";position:absolute;top:-12px;left:14px;font-size:100px;line-height:1;color:var(--brand);opacity:.14;font-family:Georgia,serif;font-weight:700}
-.testimonial p{margin:0;color:var(--ink);font-size:15.5px;line-height:1.6;font-style:italic}
+.testimonial{position:relative;background:#fff;border:1px solid var(--border);border-radius:12px;padding:40px 28px 28px;overflow:hidden}
+.testimonial::before{content:"“";position:absolute;top:-14px;left:16px;font-size:112px;line-height:1;color:var(--brand);opacity:.14;font-family:Georgia,serif;font-weight:700}
+.testimonial p{margin:0;color:var(--ink);font-size:15.5px;line-height:1.62;font-style:italic}
+@media (min-width:768px){.testimonial{border-radius:16px}}
+@media (min-width:1024px){.testimonial{border-radius:20px}}
 
-/* --- Machine gallery: crisp rounded tiles --- */
+/* --- Machine gallery --- */
 .machine-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin:22px 0 8px}
-.machine-gallery .tile{border-radius:12px;overflow:hidden;aspect-ratio:4/3;background:#F4F5F6;position:relative;transition:transform .18s,box-shadow .18s}
+.machine-gallery .tile{border-radius:12px;overflow:hidden;aspect-ratio:4/3;background:#F4F5F6;position:relative;transition:transform .2s,box-shadow .2s}
 .machine-gallery .tile:hover{transform:scale(1.02);box-shadow:0 12px 30px -12px rgba(15,30,58,0.20)}
 .machine-gallery .tile img{width:100%;height:100%;object-fit:cover;display:block}
+@media (min-width:768px){.machine-gallery .tile{border-radius:16px}}
+@media (min-width:1024px){.machine-gallery .tile{border-radius:20px}}
 
 /* --- Mobile responsive --- */
 @media (max-width:900px){
-  .home-hero{grid-template-columns:1fr!important;padding:28px 0 20px;gap:26px}
-  .home-hero h1{font-size:36px}
+  .home-hero{grid-template-columns:1fr!important;padding:32px 0 20px;gap:28px}
+  .home-hero h1{font-size:38px}
   .home-hero .lede{font-size:17px}
   .home-hero .hero-img{aspect-ratio:16/10}
-  .section{padding:44px 0}
-  .section h2{font-size:26px}
-  .marquee-item{height:80px;padding:16px 22px;min-width:140px}
-  .marquee-item img{max-height:44px;max-width:120px}
-  .stat-bar .stat .n{font-size:30px}
+  .section{padding:48px 0}
+  .section h2{font-size:28px}
+  .section-inner{padding:0 20px}
+  .marquee-item{height:82px;padding:16px 22px;min-width:150px}
+  .marquee-item img{max-height:46px;max-width:130px}
+  .stat-bar .stat .n{font-size:32px}
 }
 @media (max-width:600px){
-  .home-hero h1{font-size:30px}
-  .section h2{font-size:22px}
+  .home-hero h1{font-size:32px;letter-spacing:-.02em}
+  .home-hero .lede{font-size:16px}
+  .section{padding:40px 0}
+  .section h2{font-size:24px}
+  .section-inner{padding:0 18px}
   .zone-grid,.stat-bar,.testimonial-grid{grid-template-columns:1fr}
+  .home-hero{padding:24px 0 16px}
 }
 </style>
 
@@ -267,7 +287,7 @@ main{padding-top:0}
       <h2>Mission-Critical Industries</h2>
       <p class="lede-sm">Based in New Waverly and serving manufacturers throughout Conroe, Huntsville, The Woodlands, and East Texas, B&amp;R Productions delivers precision CNC machining for industries where performance isn't negotiable.</p>
       <div class="card-grid">
-        <div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/2a4GpqGfSWwauJl6L8JbL7KCKxi6Ly9jjxvibB2r3FWS1ndYMMOoNcBguh81PhYa.png" alt="Oil &amp; Gas CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Oil &amp; Gas CNC Machining</strong><p>Precision machining for API 6A wellhead parts, drilling equipment, frac components, and subsea assemblies. Our New Waverly facility serves operators throughout Montgomery County, Walker County, and the Gulf Coast.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">API 6A components</span><span class="chip">Drill collars</span><span class="chip">Valve bodies</span><span class="chip">Frac equipment</span><span class="chip">Downhole tools</span><span class="chip">Wellhead assemblies</span></div><a class="card-cta" href="/industries/oil-gas-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div><div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/2f6bxWUWng1zebx0A4I7XCNyQcjN1MfeMY6Q7MlH88RVH5hmulppBa7cXu1y4kFV.png" alt="Aerospace CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Aerospace CNC Machining</strong><p>High-precision machining of titanium, aluminum 7075, and Inconel for commercial aviation, defense aerospace, UAV programs, and space systems. Serving contractors throughout Conroe, Houston, Dallas, and Texas aerospace corridors.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">Titanium Ti-6Al-4V</span><span class="chip">Aluminum 7075</span><span class="chip">Structural assemblies</span><span class="chip">Engine components</span><span class="chip">UAV hardware</span></div><a class="card-cta" href="/industries/aerospace-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div><div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/3aAYGbdxvtoJgKTxpdKZXpR9bwMdMxixUeojITqP2NKNQLWNeZDnmxbxcnLLSmrw.png" alt="Military CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Military CNC Machining</strong><p>Mission-critical machining for weapons systems, ground vehicles, tactical equipment, and defense aviation. Based in New Waverly, we support defense contractors throughout Texas with precision components on tight timelines.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">Weapons components</span><span class="chip">Ground vehicle parts</span><span class="chip">Military aviation</span><span class="chip">UAV systems</span><span class="chip">Tactical hardware</span><span class="chip">Defense R&amp;D</span></div><a class="card-cta" href="/industries/military-defense-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div><div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/33eokr28sIg3O89I2dlNiLtliCJxo6lSjwFALiT24wOyWKjRDsF13UgEvlnIrSWx.png" alt="Industrial CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Industrial CNC Machining</strong><p>Heavy-duty machining for automation systems, material handling equipment, power generation, and manufacturing operations. Serving plants throughout Montgomery County, Harris County, and the Texas industrial corridor.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">Heavy equipment</span><span class="chip">Automation assemblies</span><span class="chip">Material handling</span><span class="chip">Power systems</span><span class="chip">MRO support</span><span class="chip">Custom fixtures</span></div><a class="card-cta" href="/industries/industrial-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div>
+        <div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/1bZXxoJ0VGggt6dJkwk6ogNHtmnWScvlhHc1KV4tBkeBEn3a3AErJ5D5MQAIYUr9.png" alt="Oil &amp; Gas CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Oil &amp; Gas CNC Machining</strong><p>Precision machining for API 6A wellhead parts, drilling equipment, frac components, and subsea assemblies. Our New Waverly facility serves operators throughout Montgomery County, Walker County, and the Gulf Coast.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">API 6A components</span><span class="chip">Drill collars</span><span class="chip">Valve bodies</span><span class="chip">Frac equipment</span><span class="chip">Downhole tools</span><span class="chip">Wellhead assemblies</span></div><a class="card-cta" href="/industries/oil-gas-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div><div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/2a5zIXWdG2zl5kMxRS0OyBF2FYFKeqyQTMgZt0eBvOKfyEi00J0g7fkXwsPhNjo7.png" alt="Aerospace CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Aerospace CNC Machining</strong><p>High-precision machining of titanium, aluminum 7075, and Inconel for commercial aviation, defense aerospace, UAV programs, and space systems. Serving contractors throughout Conroe, Houston, Dallas, and Texas aerospace corridors.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">Titanium Ti-6Al-4V</span><span class="chip">Aluminum 7075</span><span class="chip">Structural assemblies</span><span class="chip">Engine components</span><span class="chip">UAV hardware</span></div><a class="card-cta" href="/industries/aerospace-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div><div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/1axEMYCHugzK2bL908Z5J1mbjGYLy4EQTqZHtrGZmQNmEtqZakxHLdzWOlTiJy03.png" alt="Military CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Military CNC Machining</strong><p>Mission-critical machining for weapons systems, ground vehicles, tactical equipment, and defense aviation. Based in New Waverly, we support defense contractors throughout Texas with precision components on tight timelines.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">Weapons components</span><span class="chip">Ground vehicle parts</span><span class="chip">Military aviation</span><span class="chip">UAV systems</span><span class="chip">Tactical hardware</span><span class="chip">Defense R&amp;D</span></div><a class="card-cta" href="/industries/military-defense-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div><div class="card" style="padding:0"><div class="card-img"><img src="/_external/cdn.durable.co/blocks/15ONCFkgR8QJilD9uGLemLISFoE1ZPhtYrG5KQYx9182xr0YlYYOtyOKGAL5dubV.png" alt="Industrial CNC Machining" loading="lazy"/></div><div class="card-body"><strong>Industrial CNC Machining</strong><p>Heavy-duty machining for automation systems, material handling equipment, power generation, and manufacturing operations. Serving plants throughout Montgomery County, Harris County, and the Texas industrial corridor.</p><div style="margin-top:6px"><em style="color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;display:block;margin-bottom:6px">Specialties</em><span class="chip">Heavy equipment</span><span class="chip">Automation assemblies</span><span class="chip">Material handling</span><span class="chip">Power systems</span><span class="chip">MRO support</span><span class="chip">Custom fixtures</span></div><a class="card-cta" href="/industries/industrial-cnc-machining/" style="margin-top:14px;display:inline-block">Learn More →</a></div></div>
       </div>
     </div>
   </section>
@@ -381,5 +401,6 @@ main{padding-top:0}
   </div>
 </footer>
 <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-WKQL399K"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript></body>
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+</body>
 </html>
