@@ -29,15 +29,21 @@ a{color:var(--brand)}
 
 .site-header{background:#fff;color:#000;position:sticky;top:0;z-index:2000;border-bottom:1px solid #eee}
 .site-header .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;flex-wrap:wrap;max-width:1280px}
-.brand img{display:block;height:60px;width:auto;max-width:220px}
-.site-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.site-nav>a{color:#000;text-decoration:none;font-weight:400;font-size:15px;padding:8px 14px;border-radius:4px;cursor:pointer;line-height:1.5;transition:color .15s}
-.site-nav>a:hover{color:var(--brand)}
-.site-nav>a.active{border-bottom:2px solid #000;padding-bottom:6px;border-radius:0}
-.site-nav .cta{background:var(--brand);color:#fff!important;padding:10px 22px;border-radius:22px;font-weight:600;margin-left:8px}
+.site-header .brand img{display:block;height:75px;width:auto;max-width:240px;object-fit:contain}
+.site-nav{display:flex;align-items:center;gap:0;flex-wrap:wrap}
+.site-nav>a,.site-nav>.has-menu>span{color:#000;text-decoration:none;font-weight:400;font-size:15px;padding:8px 14px;cursor:pointer;line-height:1.5;transition:color .15s;display:inline-flex;align-items:center;gap:6px}
+.site-nav>a:hover,.site-nav>.has-menu>span:hover{color:var(--brand)}
+.site-nav .has-menu{position:relative}
+.site-nav .has-menu>span::after{content:"";display:inline-block;width:8px;height:8px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-left:2px;margin-top:-3px}
+.site-nav .menu{position:absolute;top:100%;left:0;background:#fff;border:1px solid #e0e0e0;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.08);padding:8px 0;min-width:220px;opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .15s,transform .15s,visibility .15s;list-style:none;margin:0;z-index:3000}
+.site-nav .has-menu:hover .menu,.site-nav .has-menu:focus-within .menu{opacity:1;visibility:visible;transform:translateY(0)}
+.site-nav .menu a{display:block;padding:10px 18px;color:#000;text-decoration:none;font-size:14.5px;line-height:1.4;white-space:nowrap}
+.site-nav .menu a:hover{background:#F4F5F6;color:var(--brand)}
+.site-nav .cta{background:var(--brand);color:#fff!important;padding:10px 22px;border-radius:22px;font-weight:600;margin-left:14px}
 .site-nav .cta:hover{background:var(--brand-2);color:#fff!important}
-.site-nav .phone{color:var(--brand)!important;font-weight:600}
-@media (max-width:900px){.site-header .wrap{padding:12px 18px}.brand img{height:44px}.site-nav>a{padding:6px 10px;font-size:14px}}
+.site-nav .phone{color:#000!important;font-weight:600;padding-left:18px}
+.site-nav .phone:hover{color:var(--brand)!important}
+@media (max-width:900px){.site-header .wrap{padding:12px 18px}.site-header .brand img{height:44px}.site-nav>a,.site-nav>.has-menu>span{padding:6px 10px;font-size:14px}.site-nav .menu{position:static;box-shadow:none;border:0;opacity:1;visibility:visible;transform:none;padding:0 0 0 12px;min-width:0}.site-nav .menu a{padding:4px 8px;font-size:13px}}
 main{padding:36px 0 48px}
 
 .crumbs{font-size:13px;color:var(--muted);margin:0 0 12px}
@@ -117,9 +123,15 @@ a.related-card span{display:block;color:var(--muted);font-size:13.5px;line-heigh
 .author-box p:last-child{margin-bottom:0}
 .author-box strong{color:var(--brand)}
 
-.site-footer{background:var(--nav-bg);color:#c9d1da;padding:34px 0 20px;font-size:14px;margin-top:44px}
+.site-footer{background:var(--nav-bg);color:#c9d1da;padding:48px 0 24px;font-size:14px;margin-top:56px}
 .site-footer a{color:#c9d1da;text-decoration:none;display:block;padding:3px 0}
-.site-footer .copy{border-top:1px solid #222;padding-top:16px;color:#8b95a1;font-size:13px;margin-top:14px}
+.site-footer a:hover{color:#fff}
+.site-footer .foot-cols{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:36px;margin-bottom:28px}
+.site-footer .foot-col strong{color:#fff;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:10px}
+.site-footer .foot-col p{margin:6px 0;color:#c9d1da;line-height:1.55}
+.site-footer .foot-brand p{max-width:36em;color:#8b95a1}
+.site-footer .copy{border-top:1px solid #222;padding-top:20px;color:#8b95a1;font-size:13px;margin-top:8px}
+@media (max-width:800px){.site-footer .foot-cols{grid-template-columns:1fr;gap:22px}}
 </style>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-WKQL399K');</script>
 </head>
@@ -127,13 +139,34 @@ a.related-card span{display:block;color:var(--muted);font-size:13.5px;line-heigh
 <header class="site-header">
   <div class="wrap">
     <a class="brand" href="/"><img src="/_external/cdn.durable.co/logos/1j4ujsX3V5OxBUNNRVRtb7xgibPSC6Jo9Vy5zagDpVZR2nGtGCECAWXsauOZ9C2J.png" alt="B&R Productions"/></a>
-    <nav class="site-nav">
+    <nav class="site-nav" aria-label="Main navigation">
       <a href="/">Home</a>
-      <a href="/industries/oil-gas-cnc-machining/">Industries</a>
-      <a href="/capabilities/">Capabilities</a>
-      <a href="/whitepapers/">White Papers</a>
-      <a href="/guides/">Guides</a>
-      <a href="/about-us/">About Us</a>
+      <div class="has-menu"><span tabindex="0">Industries</span>
+        <ul class="menu">
+          <li><a href="/industries/">All Industries</a></li>
+          <li><a href="/industries/oil-gas-cnc-machining/">Oil &amp; Gas</a></li>
+          <li><a href="/industries/aerospace-cnc-machining/">Aerospace</a></li>
+          <li><a href="/industries/military-defense-cnc-machining/">Military &amp; Defense</a></li>
+          <li><a href="/industries/industrial-cnc-machining/">Industrial</a></li>
+        </ul>
+      </div>
+      <div class="has-menu"><span tabindex="0">Capabilities</span>
+        <ul class="menu">
+          <li><a href="/capabilities/">All Capabilities</a></li>
+          <li><a href="/capabilities/cnc-turning/">CNC Turning</a></li>
+          <li><a href="/capabilities/cnc-milling/">CNC Milling</a></li>
+          <li><a href="/capabilities/manual-machining/">Manual Machining</a></li>
+          <li><a href="/capabilities/manual-milling/">Manual Milling</a></li>
+        </ul>
+      </div>
+      <div class="has-menu"><span tabindex="0">About Us</span>
+        <ul class="menu">
+          <li><a href="/about-us/">About Us</a></li>
+          <li><a href="/whitepapers/">White Papers</a></li>
+          <li><a href="/guides/">Guides</a></li>
+          <li><a href="/about-us/get-a-quote/">Get a Quote</a></li>
+        </ul>
+      </div>
       <a class="phone" href="tel:+19362917827">(936) 291-7827</a>
       <a class="cta" href="/about-us/get-a-quote/">Start a Job</a>
     </nav>
@@ -202,8 +235,33 @@ a.related-card span{display:block;color:var(--muted);font-size:13.5px;line-heigh
 </main>
 <footer class="site-footer">
   <div class="wrap">
-    <div><strong style="color:#fff">B&R Productions</strong> &middot; New Waverly, TX &middot; <a href="tel:+19362917827" style="display:inline;color:#0C74C0">(936) 291-7827</a></div>
-    <div class="copy"><a href="/" style="display:inline">Home</a> &middot; <a href="/guides/" style="display:inline">All Guides</a> &middot; <a href="/whitepapers/" style="display:inline">White Papers</a> &middot; <a href="/about-us/get-a-quote/" style="display:inline">Get a Quote</a></div>
+    <div class="foot-cols">
+      <div class="foot-col foot-brand">
+        <strong style="color:#fff;font-size:16px">B&R Productions</strong>
+        <p>Trusted CNC machine shop serving East Texas and North Houston since 1994. Located in New Waverly, close to Huntsville, Conroe, Willis, The Woodlands, Spring, Montgomery, Shenandoah, and North Houston.</p>
+      </div>
+      <div class="foot-col">
+        <strong>Visit</strong>
+        <p>5909 Farm to Market Road 1374<br/>New Waverly, TX 77358</p>
+        <p>Monday–Friday: 9:00 AM – 5:00 PM</p>
+        <p><a href="tel:+19362917827" style="display:inline">(936) 291-7827</a></p>
+      </div>
+      <div class="foot-col">
+        <strong>Explore</strong>
+        <p><a href="/industries/" style="display:inline">Industries</a></p>
+        <p><a href="/capabilities/" style="display:inline">Capabilities</a></p>
+        <p><a href="/whitepapers/" style="display:inline">White Papers</a></p>
+        <p><a href="/guides/" style="display:inline">Guides</a></p>
+        <p><a href="/about-us/" style="display:inline">About Us</a></p>
+        <p><a href="/about-us/get-a-quote/" style="display:inline">Get a Quote</a></p>
+      </div>
+      <div class="foot-col">
+        <strong>Legal</strong>
+        <p><a href="/privacy-policy/" style="display:inline">Privacy policy</a></p>
+        <p><a href="/terms-of-service/" style="display:inline">Terms of Service</a></p>
+      </div>
+    </div>
+    <div class="copy">&copy; B&R Productions &middot; ISO 9001:2015 certified</div>
   </div>
 </footer>
 <script>window.addEventListener('beforeprint',function(){document.querySelectorAll('details').forEach(function(d){d.setAttribute('open','')})});</script>
