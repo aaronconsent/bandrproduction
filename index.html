@@ -112,9 +112,9 @@ main{padding-top:0}
 
 /* --- Hero: bigger H1, tighter lede, elegant image frame --- */
 .home-hero{padding:56px 0 32px}
-.home-hero h1{font-size:56px;line-height:1.06;letter-spacing:-.022em;font-weight:800;color:var(--ink);margin:8px 0 14px}
+.home-hero h1{font-size:45px;line-height:1.08;letter-spacing:-.02em;font-weight:800;color:var(--ink);margin:14px 0 14px}
 .home-hero .lede{font-size:20px;line-height:1.55;color:var(--muted);max-width:56ch}
-.home-hero .eyebrow{color:var(--brand);font-weight:700;letter-spacing:.12em;font-size:12.5px;text-transform:uppercase;margin-bottom:4px}
+.home-hero .hero-badge{display:inline-block;background:rgba(12,116,192,0.08);color:var(--brand);border:1px solid rgba(12,116,192,0.20);padding:7px 16px;border-radius:999px;font-size:13px;font-weight:600;letter-spacing:.01em;line-height:1.4}
 .home-hero .hero-img{position:relative;border-radius:20px;overflow:hidden;box-shadow:0 22px 60px -22px rgba(15,30,58,0.30),0 8px 22px rgba(15,30,58,0.08);aspect-ratio:4/3;background:#0f1e3a}
 .home-hero .hero-img img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .5s ease}
 .home-hero .hero-img:hover img{transform:scale(1.03)}
@@ -186,8 +186,9 @@ main{padding-top:0}
 /* --- Mobile responsive --- */
 @media (max-width:900px){
   .home-hero{grid-template-columns:1fr!important;padding:32px 0 20px;gap:28px}
-  .home-hero h1{font-size:38px}
+  .home-hero h1{font-size:32px}
   .home-hero .lede{font-size:17px}
+  .home-hero .hero-badge{font-size:12px;padding:6px 14px}
   .home-hero .hero-img{aspect-ratio:16/10}
   .section{padding:48px 0}
   .section h2{font-size:28px}
@@ -197,7 +198,7 @@ main{padding-top:0}
   .stat-bar .stat .n{font-size:32px}
 }
 @media (max-width:600px){
-  .home-hero h1{font-size:32px;letter-spacing:-.02em}
+  .home-hero h1{font-size:26px;letter-spacing:-.02em}
   .home-hero .lede{font-size:16px}
   .section{padding:40px 0}
   .section h2{font-size:24px}
@@ -254,7 +255,7 @@ main{padding-top:0}
     <div class="section-inner">
       <div class="home-hero" style="display:grid;grid-template-columns:1.2fr 1fr;gap:44px;align-items:center">
         <div>
-          <p class="eyebrow">New Waverly CNC Machine Shop · Serving Conroe, Huntsville, The Woodlands &amp; Texas</p>
+          <span class="hero-badge">New Waverly CNC Machine Shop · Serving Conroe, Huntsville, The Woodlands &amp; Texas</span>
           <h1>Texas CNC Machine Shop</h1>
           <p class="lede">Since 1994, B&amp;R Productions has been a trusted CNC machine shop in New Waverly, Texas, providing high-precision parts for oil &amp; gas, aerospace, defense, and industrial operations. Serving Montgomery County, Walker County, and manufacturers across the Gulf Coast, we combine deep alloy expertise with the responsiveness of a family-run shop.</p>
           <div style="display:flex;gap:14px;flex-wrap:wrap;margin:28px 0 4px">
