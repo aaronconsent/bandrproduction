@@ -39,19 +39,84 @@ function clean(v, max) {
   return (v == null ? "" : String(v)).trim().slice(0, max);
 }
 
+// File upload constraints — Resend allows ~40MB per email; keep a safety margin.
+const MAX_FILE_BYTES = 25 * 1024 * 1024;      // 25 MB per file
+const MAX_TOTAL_BYTES = 25 * 1024 * 1024;     // 25 MB combined (Resend cap ~40MB, leave headroom)
+const MAX_FILES = 5;
+const ALLOWED_EXT = new Set([
+  "pdf", "dwg", "dxf", "step", "stp", "iges", "igs", "stl",
+  "sldprt", "sldasm", "sldrt", "ipt", "iam", "prt", "x_t", "x_b",
+  "zip", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff",
+  "txt", "csv", "xls", "xlsx", "doc", "docx"
+]);
+
+function _extOf(name) {
+  const s = String(name || "").toLowerCase();
+  const i = s.lastIndexOf(".");
+  return i > 0 ? s.slice(i + 1) : "";
+}
+
+function _bufToB64(buf) {
+  // Convert ArrayBuffer to base64 for Resend's attachment.content field.
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CHUNK = 32768;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
 async function handleQuote(request, env, ctx) {
   try {
     const ct = request.headers.get("content-type") || "";
     let d = {};
+    const attachments = [];
+    let totalBytes = 0;
+    let uploadError = null;
+
     if (ct.includes("application/json")) {
       d = await request.json();
     } else {
       const form = await request.formData();
-      for (const [k, v] of form.entries()) d[k] = v;
+      for (const [k, v] of form.entries()) {
+        if (v instanceof File) {
+          if (!v.name || v.size === 0) continue;
+          if (attachments.length >= MAX_FILES) {
+            uploadError = `Maximum ${MAX_FILES} files per submission.`;
+            continue;
+          }
+          const ext = _extOf(v.name);
+          if (!ALLOWED_EXT.has(ext)) {
+            uploadError = `File type not allowed: .${ext || "(none)"}`;
+            continue;
+          }
+          if (v.size > MAX_FILE_BYTES) {
+            uploadError = `File too large: ${v.name} (${Math.round(v.size / 1024 / 1024)}MB, limit 25MB per file)`;
+            continue;
+          }
+          totalBytes += v.size;
+          if (totalBytes > MAX_TOTAL_BYTES) {
+            uploadError = `Total attachment size exceeds 25MB.`;
+            continue;
+          }
+          const buf = await v.arrayBuffer();
+          attachments.push({
+            filename: v.name.slice(0, 200),
+            content: _bufToB64(buf),
+          });
+        } else {
+          d[k] = v;
+        }
+      }
     }
 
     // Honeypot — silently accept (so bots think they succeeded)
     if (clean(d._gotcha, 100)) return json({ ok: true });
+
+    if (uploadError) {
+      return json({ ok: false, error: uploadError }, 400);
+    }
 
     const name = clean(d.name, 200);
     const email = clean(d.email, 200);
@@ -67,6 +132,10 @@ async function handleQuote(request, env, ctx) {
       return json({ ok: false, error: "Please enter a valid email address." }, 400);
     }
 
+    const attachmentSummary = attachments.length
+      ? `Attachments (${attachments.length}): ${attachments.map((a) => a.filename).join(", ")}`
+      : "No attachments";
+
     const lines = [
       `New submission from the ${source} form on bandrproduction.com`,
       "",
@@ -77,6 +146,8 @@ async function handleQuote(request, env, ctx) {
       "",
       "Project details:",
       message,
+      "",
+      attachmentSummary,
     ].filter((l) => l !== null);
 
     if (!env.RESEND_API_KEY) {
@@ -94,10 +165,11 @@ async function handleQuote(request, env, ctx) {
       from: env.QUOTE_FROM || "B&R Productions Website <forms@bandrproduction.com>",
       to: [env.QUOTE_TO || "sales@bandrproduction.com"],
       reply_to: email,
-      subject: `New ${source} request: ${name}${company ? " (" + company + ")" : ""}`,
+      subject: `New ${source} request: ${name}${company ? " (" + company + ")" : ""}${attachments.length ? " [" + attachments.length + " attached]" : ""}`,
       text: lines.join("\n"),
     };
     if (cc.length) payload.cc = cc;
+    if (attachments.length) payload.attachments = attachments;
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",

@@ -156,6 +156,21 @@ main{padding-top:0!important;padding-bottom:0!important}
 #quote-status.err{color:#b00020;background:rgba(176,0,32,0.06);border:1px solid rgba(176,0,32,0.20);padding:12px 14px;border-radius:8px}
 .quote-side{display:flex;flex-direction:column;gap:16px}
 .side-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px 22px}
+/* File-upload dropzone + list */
+.dropzone{display:block;border:2px dashed var(--border);border-radius:10px;padding:22px 20px;text-align:center;cursor:pointer;background:#fafbfc;transition:border-color .15s,background .15s}
+.dropzone:hover{border-color:var(--brand);background:rgba(12,116,192,0.03)}
+.dropzone.drag{border-color:var(--brand);background:rgba(12,116,192,0.06)}
+.dz-inner strong{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+.dz-inner .dz-hint{color:var(--muted);font-size:12.5px}
+.file-list{list-style:none;padding:0;margin:10px 0 0}
+.file-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border:1px solid var(--border);border-radius:8px;margin:6px 0;font-size:13.5px}
+.file-item .fi-name{flex:1;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-item .fi-size{color:var(--muted);font-variant-numeric:tabular-nums}
+.file-item .fi-remove{background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:0 4px}
+.file-item .fi-remove:hover{color:#b00020}
+/* Upload progress bar */
+.quote-progress{margin-top:14px;background:#eef1f5;border-radius:999px;overflow:hidden;height:8px}
+.quote-progress .bar{width:0%;height:100%;background:var(--brand);transition:width .12s ease-out}
 @media (min-width:1024px){.quote-form-wrap{border-radius:20px}.side-card{border-radius:16px}}
 @media (max-width:900px){
   .quote-grid{grid-template-columns:1fr;gap:22px}
@@ -253,9 +268,22 @@ main{padding-top:0!important;padding-bottom:0!important}
               <textarea name="message" required maxlength="5000" rows="7" placeholder="Part description, quantity, material, tolerance requirements, target delivery, and any special quality/certification requirements (ITAR, DFARS, ITPs, first-article, etc.)"></textarea>
             </label>
 
+            <div class="field">
+              <span>Attach drawings, prints, or CAD files (optional)</span>
+              <label class="dropzone" id="dropzone" for="quote-files">
+                <input type="file" id="quote-files" name="files" multiple accept=".pdf,.dwg,.dxf,.step,.stp,.iges,.igs,.stl,.sldprt,.sldasm,.sldrt,.ipt,.iam,.prt,.x_t,.x_b,.zip,.png,.jpg,.jpeg,.gif,.webp,.tif,.tiff,.txt,.csv,.xls,.xlsx,.doc,.docx" hidden/>
+                <div class="dz-inner">
+                  <strong>Drop files here or click to browse</strong>
+                  <span class="dz-hint">PDF, DWG, DXF, STEP, IGES, STL, ZIP, images, docs · up to 5 files · 25MB each</span>
+                </div>
+              </label>
+              <ul id="file-list" class="file-list" aria-live="polite"></ul>
+            </div>
+
             <p style="color:var(--muted);font-size:13px;margin:8px 0 18px">Prefer email? Send print + spec to <a href="mailto:sales@bandrproduction.com">sales@bandrproduction.com</a>. Prefer to talk? <a href="tel:+19362917827">(936) 291-7827</a> — shop hours Mo–Fr 9–5 CT.</p>
 
             <button type="submit" class="dl-cta" id="quote-submit">Send Quote Request →</button>
+            <div id="quote-progress" class="quote-progress" hidden><div class="bar"></div></div>
             <div id="quote-status" role="status" aria-live="polite"></div>
           </form>
         </div>
@@ -297,28 +325,110 @@ main{padding-top:0!important;padding-bottom:0!important}
   if (!form) return;
   var status = document.getElementById('quote-status');
   var btn = document.getElementById('quote-submit');
+  var fileInput = document.getElementById('quote-files');
+  var dropzone = document.getElementById('dropzone');
+  var fileList = document.getElementById('file-list');
+  var progress = document.getElementById('quote-progress');
+  var progressBar = progress ? progress.querySelector('.bar') : null;
+
+  var MAX_FILE = 25 * 1024 * 1024;       // 25 MB per file
+  var MAX_TOTAL = 25 * 1024 * 1024;      // 25 MB combined
+  var MAX_FILES = 5;
+  var ALLOWED = ['pdf','dwg','dxf','step','stp','iges','igs','stl','sldprt','sldasm','sldrt','ipt','iam','prt','x_t','x_b','zip','png','jpg','jpeg','gif','webp','tif','tiff','txt','csv','xls','xlsx','doc','docx'];
+  var stagedFiles = [];  // Array of File objects we're going to send
+
+  function fmt(bytes){
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/1048576).toFixed(1) + ' MB';
+  }
+  function extOf(name){
+    var i = String(name||'').toLowerCase().lastIndexOf('.');
+    return i > 0 ? name.toLowerCase().slice(i+1) : '';
+  }
+  function totalSize(){ return stagedFiles.reduce(function(s,f){return s+f.size}, 0); }
+  function renderList(){
+    fileList.innerHTML = '';
+    stagedFiles.forEach(function(f, i){
+      var li = document.createElement('li');
+      li.className = 'file-item';
+      li.innerHTML = '<span class="fi-name"></span><span class="fi-size"></span><button type="button" class="fi-remove" aria-label="Remove">×</button>';
+      li.querySelector('.fi-name').textContent = f.name;
+      li.querySelector('.fi-size').textContent = fmt(f.size);
+      li.querySelector('.fi-remove').addEventListener('click', function(){ stagedFiles.splice(i,1); renderList(); });
+      fileList.appendChild(li);
+    });
+  }
+  function addFiles(list){
+    var err = null;
+    for (var i = 0; i < list.length; i++){
+      var f = list[i];
+      if (stagedFiles.length >= MAX_FILES){ err = 'Max ' + MAX_FILES + ' files. Remove one to add another.'; break; }
+      if (ALLOWED.indexOf(extOf(f.name)) < 0){ err = f.name + ': file type not allowed.'; continue; }
+      if (f.size > MAX_FILE){ err = f.name + ' is ' + fmt(f.size) + ' — 25MB max per file.'; continue; }
+      if (totalSize() + f.size > MAX_TOTAL){ err = 'Combined size exceeds 25MB.'; break; }
+      stagedFiles.push(f);
+    }
+    renderList();
+    if (err){ status.className = 'err'; status.textContent = err; }
+    else if (status.className === 'err'){ status.className = ''; status.textContent = ''; }
+  }
+
+  fileInput.addEventListener('change', function(e){ addFiles(e.target.files); e.target.value = ''; });
+  ['dragenter','dragover'].forEach(function(ev){
+    dropzone.addEventListener(ev, function(e){ e.preventDefault(); dropzone.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    dropzone.addEventListener(ev, function(e){ e.preventDefault(); dropzone.classList.remove('drag'); });
+  });
+  dropzone.addEventListener('drop', function(e){ if (e.dataTransfer && e.dataTransfer.files) addFiles(e.dataTransfer.files); });
+
   form.addEventListener('submit', function(ev){
     ev.preventDefault();
     status.className = ''; status.textContent = 'Sending…';
     btn.disabled = true; btn.style.opacity = '0.6';
+
     var fd = new FormData(form);
-    fetch('/api/quote', { method: 'POST', body: fd })
-      .then(function(r){ return r.json().catch(function(){ return {ok:false, error:'Unexpected response'} }); })
-      .then(function(d){
-        if (d && d.ok){
-          status.className = 'ok'; status.textContent = '✓ Sent — we\'ll get back to you within one business day. Rig-down? Call ' + '(936) 291-7827' + ' now.';
-          form.reset();
-        } else {
-          status.className = 'err';
-          status.textContent = (d && d.error) ? d.error : 'Something went wrong. Please email sales@bandrproduction.com directly.';
+    // Remove any leftover file-input entries and use our staged list.
+    fd.delete('files');
+    stagedFiles.forEach(function(f){ fd.append('files', f, f.name); });
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/quote');
+    // Show progress bar only when uploading files
+    if (stagedFiles.length && progress){
+      progress.hidden = false;
+      progressBar.style.width = '0%';
+      xhr.upload.addEventListener('progress', function(e){
+        if (e.lengthComputable){
+          var pct = Math.min(99, (e.loaded / e.total) * 100);
+          progressBar.style.width = pct + '%';
+          status.textContent = 'Uploading… ' + Math.floor(pct) + '%';
         }
-        btn.disabled = false; btn.style.opacity = '';
-      })
-      .catch(function(){
-        status.className = 'err';
-        status.textContent = 'Network error. Please email sales@bandrproduction.com or call ' + '(936) 291-7827' + '.';
-        btn.disabled = false; btn.style.opacity = '';
       });
+    }
+    xhr.onload = function(){
+      if (progress) progress.hidden = true;
+      var d;
+      try { d = JSON.parse(xhr.responseText); } catch(_) { d = {ok:false, error:'Unexpected server response'}; }
+      if (d && d.ok){
+        status.className = 'ok';
+        status.textContent = '✓ Sent — we\'ll get back to you within one business day. Rig-down? Call (936) 291-7827 now.';
+        form.reset();
+        stagedFiles = []; renderList();
+      } else {
+        status.className = 'err';
+        status.textContent = (d && d.error) ? d.error : 'Something went wrong. Please email sales@bandrproduction.com directly.';
+      }
+      btn.disabled = false; btn.style.opacity = '';
+    };
+    xhr.onerror = function(){
+      if (progress) progress.hidden = true;
+      status.className = 'err';
+      status.textContent = 'Network error. Please email sales@bandrproduction.com or call (936) 291-7827.';
+      btn.disabled = false; btn.style.opacity = '';
+    };
+    xhr.send(fd);
   });
 })();
 </script>
