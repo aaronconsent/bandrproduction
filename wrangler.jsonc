@@ -33,13 +33,11 @@
     "binding": "MYBROWSER"
   },
 
-  // LEADS_KV already declared as a dashboard-bound namespace. Re-declaring here
-  // so wrangler CLI deploys don't drop the binding. Replace the id with your
-  // actual KV namespace id — copy from Workers & Pages → KV → bandrproduction-leads.
-  //
-  // "kv_namespaces": [
-  //   { "binding": "LEADS_KV", "id": "481a9f0e2e1f450ca8d2497a584cd7c4" }
-  // ]
+  // LEADS_KV — re-declared here so git-connected / wrangler-CLI deploys
+  // don't drop the dashboard-set binding.
+  "kv_namespaces": [
+    { "binding": "LEADS_KV", "id": "481a9f0e2e1f450ca8d2497a584cd7c4" }
+  ],
 
   // Optional: R2 for submission screenshots (proof of submission).
   // Create bucket first: wrangler r2 bucket create bandr-citations
