@@ -942,14 +942,6 @@ small{color:var(--muted)}
       </table>
     </div>
 
-    <div class="card wide">
-      <h2>Enable Cloudflare Web Analytics</h2>
-      <ol style="margin:0;padding-left:22px;line-height:1.7">
-        <li>Cloudflare dashboard → <strong>Analytics &amp; Logs</strong> → <strong>Web Analytics</strong> → <strong>Add a site</strong> → <code>bandrproduction.com</code>.</li>
-        <li>Copy the <strong>site tag</strong> (looks like a 32-char token).</li>
-        <li>Send it to me — I add it as a script tag and it starts collecting page views + Core Web Vitals + bot filtering.</li>
-      </ol>
-    </div>
   </div>
 </div>
 
