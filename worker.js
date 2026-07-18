@@ -2134,7 +2134,7 @@ export default {
     if (p === "/admin/citations/build" && request.method === "GET") {
       return json({
         ok: true,
-        build_marker: "2CAPTCHA-INTEGRATED-v2",
+        build_marker: "CITATIONS-v3-CLEAN-BUILD",
         deployed_at: new Date().toISOString(),
         env_git_sha: env.CF_PAGES_COMMIT_SHA || null,
       });
