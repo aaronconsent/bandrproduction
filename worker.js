@@ -1532,7 +1532,9 @@ async function _submitOne(env, slug) {
       rec.notes         = result.notes || "";
     } else if (result.captcha) {
       rec.status = "skipped_captcha";
-      rec.last_error = "CAPTCHA / anti-bot wall — needs manual submission";
+      // Preserve the specific error from _tryCaptchaOrBail — the generic
+      // "manual submission" fallback hides why the solve failed.
+      rec.last_error = result.error || "CAPTCHA / anti-bot wall — needs manual submission";
     } else {
       rec.status = "failed";
       rec.last_error = result.error || "adapter returned not-ok";
@@ -1707,9 +1709,17 @@ async function _injectCaptchaToken(page, captcha, token) {
 // Called by adapters instead of `return {ok:false, captcha:true}`.
 // Tries to solve; if it works, injects token and lets the adapter continue.
 // Returns { proceed: true } if solved, or { proceed: false, ...bailInfo } if not.
+// Also stamps rec.detected_captcha_type + rec.detected_sitekey for debugging.
 async function _tryCaptchaOrBail(env, page, captcha, pageUrl, rec) {
+  // Surface what we saw on the page, even if we bail
+  rec.detected_captcha_type = captcha ? captcha.type : null;
+  rec.detected_sitekey      = captcha ? (captcha.sitekey || null) : null;
+
   if (!env.CAPTCHA_API_KEY) {
-    return { proceed: false, ok: false, captcha: true, error: "CAPTCHA present; no CAPTCHA_API_KEY set" };
+    return { proceed: false, ok: false, captcha: true, error: "CAPTCHA detected; CAPTCHA_API_KEY not set" };
+  }
+  if (!captcha || !captcha.sitekey) {
+    return { proceed: false, ok: false, captcha: true, error: `Detected CAPTCHA but couldn't extract sitekey (type=${captcha && captcha.type})` };
   }
   const solve = await _solveCaptcha(env, captcha, pageUrl);
   if (!solve.ok) {
