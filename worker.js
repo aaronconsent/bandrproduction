@@ -2130,6 +2130,15 @@ export default {
     if (p === "/dashboard/api/cf-analytics" && request.method === "GET") return endpointCfAnalytics(request, env);
 
     // ---- Citation submission stack (Phase 2) --------------------------------
+    // Build marker — proves latest deploy is live. Returns build ID + git sha (if set).
+    if (p === "/admin/citations/build" && request.method === "GET") {
+      return json({
+        ok: true,
+        build_marker: "2CAPTCHA-INTEGRATED-v2",
+        deployed_at: new Date().toISOString(),
+        env_git_sha: env.CF_PAGES_COMMIT_SHA || null,
+      });
+    }
     if (p === "/admin/citations/status" && request.method === "GET")    return citationsStatus(request, env);
     if (p === "/admin/citations/submit" && request.method === "POST")   return citationsSubmit(request, env, ctx);
     if (p === "/admin/citations/retry"  && request.method === "POST")   return citationsRetry(request, env, ctx);
