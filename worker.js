@@ -2144,7 +2144,7 @@ export default {
     if (p === "/admin/citations/build" && request.method === "GET") {
       return json({
         ok: true,
-        build_marker: "CITATIONS-v4-DIAG-METADATA",
+        build_marker: "BUILD-v5-2026-07-18-23-20",
         deployed_at: new Date().toISOString(),
         env_git_sha: env.CF_PAGES_COMMIT_SHA || null,
       });
