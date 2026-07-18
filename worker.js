@@ -1580,10 +1580,18 @@ async function _detectCaptcha(page) {
       // hCaptcha
       const h = document.querySelector('.h-captcha[data-sitekey], [data-hcaptcha-widget-id]');
       if (h) return { type: "hcaptcha", sitekey: h.getAttribute("data-sitekey") };
-      // Cheap fallback — did the page HTML have any anti-bot markers?
-      if (/recaptcha|hcaptcha|cf-turnstile|cf-challenge|are you a robot/i.test(document.body.innerHTML)) {
-        return { type: "unknown", sitekey: null };
+      const hIframe = document.querySelector('iframe[src*="hcaptcha.com"]');
+      if (hIframe) {
+        const m = hIframe.src.match(/[?&]sitekey=([^&]+)/);
+        if (m) return { type: "hcaptcha", sitekey: m[1] };
       }
+      // Cloudflare Managed Challenge (bot-verification interstitial —
+      // NOT a solvable widget). Detects the /cdn-cgi/challenge-platform/
+      // script or the cf-browser-verification marker.
+      const cfChallenge = document.querySelector('script[src*="/cdn-cgi/challenge-platform/"], #cf-content, .cf-browser-verification');
+      if (cfChallenge) return { type: "cf-managed-challenge", sitekey: null };
+      // No detectable widget on the page. Don't false-positive on stray
+      // "captcha" text in privacy policies / footers — return null.
       return null;
     });
     return info;
