@@ -273,9 +273,36 @@ async function sendWeeklyDigest(env) {
     lines.push("No new quote-form submissions this week.");
   }
   if (kvWarning) lines.push(kvWarning);
+
+  // ---- Citation progress ----
+  if (env.LEADS_KV && typeof DIRECTORIES !== "undefined") {
+    const cit = { submitted: [], verified: [], failed: [], pending: [] };
+    for (const slug of Object.keys(DIRECTORIES)) {
+      const raw = await env.LEADS_KV.get(`citation:${slug}`);
+      if (!raw) { cit.pending.push(slug); continue; }
+      try {
+        const r = JSON.parse(raw);
+        if (r.status === "verified" || r.status === "live") cit.verified.push(slug);
+        else if (r.status === "submitted") cit.submitted.push(slug);
+        else if (r.status === "failed" || r.status === "skipped_captcha") cit.failed.push(slug);
+        else cit.pending.push(slug);
+      } catch { cit.pending.push(slug); }
+    }
+    lines.push("");
+    lines.push("=== Citation submissions ===");
+    lines.push(`  Verified: ${cit.verified.length}  ·  Submitted (awaiting verify): ${cit.submitted.length}  ·  Failed/skipped: ${cit.failed.length}  ·  Pending: ${cit.pending.length}`);
+    if (cit.failed.length) {
+      lines.push(`  Needs attention: ${cit.failed.join(", ")}`);
+    }
+    if (cit.pending.length) {
+      lines.push(`  Not yet submitted: ${cit.pending.join(", ")}`);
+    }
+  }
+
   lines.push("");
   lines.push("Full site: https://bandrproduction.com");
   lines.push("Quote form: https://bandrproduction.com/about-us/get-a-quote/");
+  lines.push("Dashboard: https://bandrproduction.com/dashboard/");
 
   await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -834,6 +861,7 @@ small{color:var(--muted)}
   <div class="tabs">
     <div class="tab active" data-panel="seo">SEO</div>
     <div class="tab" data-panel="aeo">AEO</div>
+    <div class="tab" data-panel="citations">Citations</div>
     <div class="tab" data-panel="setup">Setup</div>
   </div>
 
@@ -914,6 +942,24 @@ small{color:var(--muted)}
       <p style="color:var(--muted);margin:0 0 12px;font-size:14px">Ask ChatGPT / Perplexity / Claude / Gemini / Copilot each of these ~monthly. Note whether B&R appears + is linked. Add findings to the Sunday briefing so we know which content to expand.</p>
       <table><thead><tr><th>Query</th><th>Why we care</th><th>Try it</th></tr></thead>
       <tbody id="targetsTbl"></tbody></table>
+    </div>
+  </div>
+
+  <!-- ============ CITATIONS PANEL ============ -->
+  <div class="panel" id="panel-citations">
+    <div class="grid">
+      <div class="card"><h3>Total directories</h3><div class="big" id="citTotal">–</div><div class="sub">Automatable via Puppeteer</div></div>
+      <div class="card"><h3>Submitted</h3><div class="big" id="citSubmitted" style="color:var(--brand)">–</div><div class="sub">Form filled, awaiting verification</div></div>
+      <div class="card"><h3>Verified</h3><div class="big" id="citVerified" style="color:var(--green)">–</div><div class="sub">Auto-clicked verification link</div></div>
+      <div class="card"><h3>Failed / skipped</h3><div class="big" id="citFailed" style="color:#b00020">–</div><div class="sub">CAPTCHA, selector miss, or account required</div></div>
+    </div>
+    <div class="card wide">
+      <h2>Per-directory status</h2>
+      <p class="sub" style="margin:0 0 12px">Live from <code>LEADS_KV</code> under <code>citation:*</code> keys. To submit or retry, hit <code>/admin/citations/submit</code> or <code>/admin/citations/retry</code> with your <code>ADMIN_TOKEN</code>. See <code>content/CITATIONS_SETUP.md</code>.</p>
+      <table>
+        <thead><tr><th>Directory</th><th>Tier</th><th>Status</th><th>Submitted</th><th>Verified</th><th>Notes / error</th></tr></thead>
+        <tbody id="citTbl"><tr><td colspan="6"><small>Loading…</small></td></tr></tbody>
+      </table>
     </div>
   </div>
 
@@ -1066,11 +1112,50 @@ async function loadCf(days) {
 
 $('seoDays').addEventListener('change', () => { const d = $('seoDays').value; loadGsc(d); loadGa4(d); loadBing(d); loadCf(d); });
 
+async function loadCitations() {
+  try {
+    const r = await fetch('/dashboard/api/citations');
+    const d = await r.json();
+    if (!d.ok) {
+      $('citTbl').innerHTML = '<tr><td colspan="6"><small>' + (d.error || 'load failed') + '</small></td></tr>';
+      return;
+    }
+    $('citTotal').textContent = d.summary.total;
+    $('citSubmitted').textContent = d.summary.submitted;
+    $('citVerified').textContent = d.summary.verified;
+    $('citFailed').textContent = d.summary.failed + d.summary.pending;
+    var badge = function(status){
+      var color = 'var(--muted)', bg = '#f4f5f6';
+      if (status === 'submitted') { color = 'var(--brand)'; bg = 'rgba(12,116,192,0.10)'; }
+      else if (status === 'verified' || status === 'live') { color = 'var(--green)'; bg = 'rgba(27,122,58,0.10)'; }
+      else if (status === 'failed') { color = '#b00020'; bg = 'rgba(176,0,32,0.10)'; }
+      else if (status === 'skipped_captcha') { color = '#b56100'; bg = 'rgba(181,97,0,0.10)'; }
+      return '<span style="display:inline-block;padding:3px 10px;border-radius:12px;color:'+color+';background:'+bg+';font-size:12px;font-weight:600">'+status+'</span>';
+    };
+    var fmt = function(ts){ return ts ? new Date(ts).toLocaleString() : '—'; };
+    var rows = d.records.map(function(r){
+      var dir = d.directories[r.directory] || {};
+      var name = dir.name || r.directory;
+      return '<tr>'
+        + '<td><strong>'+name+'</strong><br><small><a href="'+(r.url||dir.url)+'" target="_blank" rel="noopener">'+(r.url||dir.url||'').replace(/^https?:\\/\\//,'')+'</a></small></td>'
+        + '<td>'+r.tier+'</td>'
+        + '<td>'+badge(r.status)+'</td>'
+        + '<td><small>'+fmt(r.submitted_at)+'</small></td>'
+        + '<td><small>'+fmt(r.verified_at)+'</small></td>'
+        + '<td><small>'+(r.last_error || r.notes || '—')+'</small></td>'
+        + '</tr>';
+    }).join('');
+    $('citTbl').innerHTML = rows || '<tr><td colspan="6"><small>No records yet — submit via /admin/citations/submit</small></td></tr>';
+  } catch (e) {
+    $('citTbl').innerHTML = '<tr><td colspan="6"><small>error: '+(e && e.message)+'</small></td></tr>';
+  }
+}
+
 async function load(days) {
   days = days || 30;
   $('aeoDays').textContent = days; $('aeoDays2').textContent = days;
   const seoDays = $('seoDays').value;
-  loadGsc(seoDays); loadGa4(seoDays); loadBing(seoDays); loadCf(seoDays);
+  loadGsc(seoDays); loadGa4(seoDays); loadBing(seoDays); loadCf(seoDays); loadCitations();
   const r = await fetch('/dashboard/api/summary?days=' + days);
   const d = await r.json();
   if (!d.ok) { alert(d.error || 'load failed'); return; }
@@ -1145,6 +1230,603 @@ load(30);
 </body>
 </html>`;
 
+// ===========================================================================
+// CITATION SUBMISSION STACK (Phase 2)
+// ===========================================================================
+// Auto-submits B&R's NAP data to ~13 automatable B2B/local directories via
+// Cloudflare Browser Rendering (Puppeteer). Each adapter targets one
+// directory's form. Skipped-by-design (CAPTCHA/phone-verify): GBP, Yelp, BBB,
+// FB, Apple, LinkedIn, Bing Places, ThomasNet — those require humans.
+//
+// State is persisted in LEADS_KV under `citation:<slug>` keys.
+// Inbound verification emails are handled by inboundEmail() (Email Routing).
+//
+// Setup once in Cloudflare dashboard (Aaron does this):
+//   1. Workers Paid plan
+//   2. Enable Browser Rendering; binding name: MYBROWSER
+//   3. Cloudflare Email Routing → create citations@bandrproduction.com
+//      → route to this Worker (email_routing binding)
+//   4. Set ADMIN_TOKEN secret (any 32-char random string)
+//   5. Install @cloudflare/puppeteer in the worker package.json:
+//      npm install --save-dev @cloudflare/puppeteer
+//   6. Optional: create R2 bucket bandr-citations for screenshots
+
+// The canonical NAP for every submission — sourced from
+// content/citation-submission-package.md and locked to prevent drift.
+const NAP = {
+  name:        "B&R Productions",
+  street:      "5909 Farm to Market Road 1374",
+  city:        "New Waverly",
+  state:       "TX",
+  postal:      "77358",
+  country:     "US",
+  phone:       "(936) 291-7827",
+  phone_e164:  "+19362917827",
+  email:       "sales@bandrproduction.com",
+  citations_email: "citations@bandrproduction.com",
+  website:     "https://bandrproduction.com",
+  founded:     1994,
+  hours:       "Mon-Fri 9:00am-5:00pm CT",
+  category_primary: "Machine Shop",
+  category_alt:     ["Manufacturer", "Metal Fabricator", "Precision Machining Service"],
+  desc_60:     "Precision CNC machining · New Waverly TX · Since 1994",
+  desc_120:    "Precision CNC machining shop in New Waverly, TX. Oil & gas, aerospace, defense — since 1994.",
+  desc_240:    "Precision CNC machining shop in New Waverly, Texas. Since 1994, we've served oil & gas, aerospace, defense, and industrial customers with expert machining of Inconel, Super Duplex, 17-4 PH, titanium, and other exotic alloys.",
+  desc_500:    "Precision CNC machining shop in New Waverly, Texas since 1994. Serving oil & gas, aerospace, military & defense, and industrial customers with expert machining of exotic alloys including Inconel, Super Duplex 2507, 17-4 PH, titanium, and Monel. 10 CNC machines including Fadal VMC, Hwacheon lathes, Samsung SL series, and UNISIG deep-hole drilling. Family-run, straight-talk lead times, full material traceability. Emergency rig-down capability.",
+};
+
+// Directory registry — one entry per adapter. `automated: true` = we run it
+// via Puppeteer. `automated: "semi"` = form works but human still finishes.
+// `automated: false` = manual only, tracked here but not touched by the Worker.
+const DIRECTORIES = {
+  "industrynet":         { name: "IndustryNet",         url: "https://industrynet.com/marketing/add/", automated: true,  tier: 2 },
+  "macraes":             { name: "MacRAE's Blue Book",  url: "https://www.macraesbluebook.com/getlisted/form1.cfm", automated: true, tier: 2 },
+  "globalspec":          { name: "GlobalSpec",          url: "https://www.globalspec.com/supplier/RegisterSupplier", automated: true, tier: 2 },
+  "manufacturingnet":    { name: "Manufacturing.net",   url: "https://www.manufacturing.net/", automated: true, tier: 2 },
+  "productionmachining": { name: "ProductionMachining", url: "https://www.productionmachining.com/directory", automated: true, tier: 2 },
+  "jobshop":             { name: "Jobshop.com",         url: "https://www.jobshop.com/",  automated: true,  tier: 2 },
+  "manta":               { name: "Manta",               url: "https://www.manta.com/",     automated: true,  tier: 3 },
+  "hotfrog":             { name: "Hotfrog",             url: "https://www.hotfrog.com/AddYourCompany",  automated: true,  tier: 3 },
+  "brownbook":           { name: "Brownbook",           url: "https://www.brownbook.net/business/free-listing/", automated: true, tier: 3 },
+  "merchantcircle":      { name: "MerchantCircle",      url: "https://www.merchantcircle.com/business/register", automated: true, tier: 3 },
+  "cylex":               { name: "Cylex",               url: "https://www.us-info.com/",  automated: true,  tier: 3 },
+  "showmelocal":         { name: "ShowMeLocal",         url: "https://www.showmelocal.com/business-registration.aspx", automated: true, tier: 3 },
+  "localdotcom":         { name: "Local.com",           url: "https://www.local.com/",     automated: true,  tier: 3 },
+};
+
+// Simple auth check for admin endpoints
+function _adminAuth(request, env) {
+  const t = request.headers.get("x-admin-token") || new URL(request.url).searchParams.get("token");
+  if (!env.ADMIN_TOKEN || t !== env.ADMIN_TOKEN) {
+    return { ok: false, response: json({ ok: false, error: "unauthorized" }, 401) };
+  }
+  return { ok: true };
+}
+
+// Load or default the per-directory state record
+async function _loadCit(env, slug) {
+  if (!env.LEADS_KV) return null;
+  const raw = await env.LEADS_KV.get(`citation:${slug}`);
+  if (raw) { try { return JSON.parse(raw); } catch { return null; } }
+  return {
+    directory: slug,
+    tier: DIRECTORIES[slug]?.tier || 3,
+    url: DIRECTORIES[slug]?.url,
+    status: "pending",
+    submitted_at: null,
+    verified_at: null,
+    live_at: null,
+    submission_id: null,
+    verification_url: null,
+    listing_url: null,
+    screenshot: null,
+    notes: "",
+    method: DIRECTORIES[slug]?.automated ? "automated" : "manual",
+    attempts: 0,
+    last_error: null,
+  };
+}
+async function _saveCit(env, rec) {
+  if (!env.LEADS_KV) return;
+  await env.LEADS_KV.put(`citation:${rec.directory}`, JSON.stringify(rec));
+}
+
+// GET /admin/citations/status?token=… — full snapshot for a UI to render
+async function citationsStatus(request, env) {
+  const auth = _adminAuth(request, env); if (!auth.ok) return auth.response;
+  const out = [];
+  for (const slug of Object.keys(DIRECTORIES)) {
+    out.push(await _loadCit(env, slug));
+  }
+  return json({ ok: true, directories: DIRECTORIES, records: out });
+}
+
+// GET /dashboard/api/citations — read-only, cookie-auth (piggybacks dashboard)
+async function citationsForDashboard(request, env) {
+  const auth = dashboardAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg || "unauthorized" }, auth.code || 401);
+  const records = [];
+  for (const slug of Object.keys(DIRECTORIES)) {
+    records.push(await _loadCit(env, slug));
+  }
+  const summary = {
+    total:     records.length,
+    submitted: records.filter(r => r && r.status === "submitted").length,
+    verified:  records.filter(r => r && r.status === "verified").length,
+    live:      records.filter(r => r && r.status === "live").length,
+    failed:    records.filter(r => r && r.status === "failed").length,
+    pending:   records.filter(r => r && r.status === "pending").length,
+  };
+  return json({ ok: true, summary, records });
+}
+
+// POST /admin/citations/submit — kick off a submission run.
+// Body: {"slug": "industrynet"}  OR  {"all": true} for the whole batch.
+async function citationsSubmit(request, env, ctx) {
+  const auth = _adminAuth(request, env); if (!auth.ok) return auth.response;
+  const body = await request.json().catch(() => ({}));
+  const slugs = body.all
+    ? Object.entries(DIRECTORIES).filter(([, d]) => d.automated === true).map(([s]) => s)
+    : (body.slug ? [body.slug] : []);
+  if (!slugs.length) return json({ ok: false, error: "supply slug or all:true" }, 400);
+  // Fire-and-forget: run each submission in the background so the caller
+  // gets an immediate response.
+  ctx.waitUntil(_runBatch(env, slugs));
+  return json({ ok: true, queued: slugs });
+}
+
+// POST /admin/citations/retry {"slug": "industrynet"} — reset + resubmit
+async function citationsRetry(request, env, ctx) {
+  const auth = _adminAuth(request, env); if (!auth.ok) return auth.response;
+  const body = await request.json().catch(() => ({}));
+  if (!body.slug) return json({ ok: false, error: "supply slug" }, 400);
+  const rec = await _loadCit(env, body.slug);
+  if (!rec) return json({ ok: false, error: "unknown directory" }, 404);
+  rec.status = "pending"; rec.last_error = null;
+  await _saveCit(env, rec);
+  ctx.waitUntil(_runBatch(env, [body.slug]));
+  return json({ ok: true, retrying: body.slug });
+}
+
+async function _runBatch(env, slugs) {
+  for (const slug of slugs) {
+    try { await _submitOne(env, slug); }
+    catch (e) { console.log("submit failed", slug, e && e.message); }
+    // Small delay between submissions so we don't hammer directories from
+    // the same egress IP in rapid succession.
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+async function _submitOne(env, slug) {
+  const dir = DIRECTORIES[slug];
+  if (!dir || !dir.automated) return;
+  const rec = await _loadCit(env, slug);
+  rec.attempts = (rec.attempts || 0) + 1;
+  rec.last_error = null;
+
+  if (!env.MYBROWSER) {
+    rec.status = "failed";
+    rec.last_error = "MYBROWSER binding missing — enable Browser Rendering in CF dashboard";
+    await _saveCit(env, rec);
+    return;
+  }
+
+  const puppeteer = await import("@cloudflare/puppeteer").catch(() => null);
+  if (!puppeteer) {
+    rec.status = "failed";
+    rec.last_error = "@cloudflare/puppeteer not installed — run: npm i --save-dev @cloudflare/puppeteer";
+    await _saveCit(env, rec);
+    return;
+  }
+
+  let browser;
+  try {
+    browser = await puppeteer.launch(env.MYBROWSER);
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36");
+
+    const adapter = ADAPTERS[slug];
+    if (!adapter) throw new Error("no adapter for " + slug);
+
+    // Every adapter returns {ok, submission_id?, listing_url?, notes?} OR
+    // {ok:false, captcha:true, error} to skip cleanly on anti-bot walls.
+    const result = await adapter(page, NAP);
+
+    // Screenshot proof
+    if (env.CITATIONS_R2 && result.ok) {
+      try {
+        const png = await page.screenshot({ fullPage: false });
+        const key = `${slug}-${Date.now()}.png`;
+        await env.CITATIONS_R2.put(key, png, { httpMetadata: { contentType: "image/png" } });
+        rec.screenshot = `r2://${key}`;
+      } catch {}
+    }
+
+    if (result.ok) {
+      rec.status = "submitted";
+      rec.submitted_at = new Date().toISOString();
+      rec.submission_id = result.submission_id || null;
+      rec.listing_url   = result.listing_url || null;
+      rec.notes         = result.notes || "";
+    } else if (result.captcha) {
+      rec.status = "skipped_captcha";
+      rec.last_error = "CAPTCHA / anti-bot wall — needs manual submission";
+    } else {
+      rec.status = "failed";
+      rec.last_error = result.error || "adapter returned not-ok";
+    }
+  } catch (e) {
+    rec.status = "failed";
+    rec.last_error = (e && e.message) || String(e);
+  } finally {
+    try { if (browser) await browser.close(); } catch {}
+    await _saveCit(env, rec);
+  }
+}
+
+// ---- Small Puppeteer helpers used across adapters ------------------------
+async function _detectCaptcha(page) {
+  // Cheap check: look for common CAPTCHA markers before wasting time filling.
+  const html = await page.content();
+  return /recaptcha|hcaptcha|cf-turnstile|cf-challenge|are you a robot/i.test(html);
+}
+async function _safeType(page, selectors, value) {
+  // Try each selector in order; type into the first one that exists.
+  for (const sel of (Array.isArray(selectors) ? selectors : [selectors])) {
+    try {
+      const el = await page.$(sel);
+      if (el) { await el.type(value, { delay: 15 }); return true; }
+    } catch {}
+  }
+  return false;
+}
+async function _safeClick(page, selectors) {
+  for (const sel of (Array.isArray(selectors) ? selectors : [selectors])) {
+    try {
+      const el = await page.$(sel);
+      if (el) { await el.click(); return true; }
+    } catch {}
+  }
+  return false;
+}
+async function _selectByText(page, selector, text) {
+  try {
+    return await page.evaluate((sel, txt) => {
+      const s = document.querySelector(sel);
+      if (!s) return false;
+      const opt = Array.from(s.options).find(o =>
+        o.text.toLowerCase().includes(txt.toLowerCase()) ||
+        o.value.toLowerCase().includes(txt.toLowerCase())
+      );
+      if (!opt) return false;
+      s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }, selector, text);
+  } catch { return false; }
+}
+
+// ---------------------------------------------------------------------------
+// ADAPTERS — one per directory. Each returns:
+//   {ok: true, submission_id?, listing_url?, notes?}
+//   OR {ok: false, captcha: true} to bail on anti-bot walls
+//   OR {ok: false, error: "…"}
+//
+// Selectors are best-guess based on typical B2B directory form patterns.
+// Each adapter needs first-run verification against the live site; when a
+// selector doesn't match, add the actual one and re-run. Adapters share the
+// helpers above so most just need to declare their field map.
+// ---------------------------------------------------------------------------
+const ADAPTERS = {
+  industrynet: async (page, n) => {
+    await page.goto(DIRECTORIES.industrynet.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="company"]', "#company"], n.name);
+    await _safeType(page, ['input[name="address1"]', 'input[name="street"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]', 'input[name="postal"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="url"]', 'input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]', 'textarea[name="about"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    await page.waitForNetworkIdle({ timeout: 15000 }).catch(() => {});
+    return { ok: true, notes: "Auto-submitted; expect email confirmation" };
+  },
+
+  macraes: async (page, n) => {
+    await page.goto(DIRECTORIES.macraes.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="CompanyName"]', 'input[name="company"]'], n.name);
+    await _safeType(page, ['input[name="Contact"]', 'input[name="contact"]'], "B&R Productions Sales");
+    await _safeType(page, ['input[name="Address"]'], n.street);
+    await _safeType(page, ['input[name="City"]'], n.city);
+    await _selectByText(page, 'select[name="Province"], select[name="State"]', n.state);
+    await _safeType(page, ['input[name="PostalCode"]', 'input[name="Zip"]'], n.postal);
+    await _safeType(page, ['input[name="Phone"]'], n.phone);
+    await _safeType(page, ['input[name="Email"]'], n.citations_email);
+    await _safeType(page, ['input[name="Website"]'], n.website);
+    await _safeType(page, ['textarea[name="Description"]', 'textarea[name="Products"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['input[type="submit"]', 'button[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    await page.waitForNetworkIdle({ timeout: 15000 }).catch(() => {});
+    return { ok: true, notes: "Auto-submitted to MacRAE's Blue Book" };
+  },
+
+  globalspec: async (page, n) => {
+    await page.goto(DIRECTORIES.globalspec.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="CompanyName"]', 'input[name="company"]'], n.name);
+    await _safeType(page, ['input[name="StreetAddress"]', 'input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="City"]'], n.city);
+    await _selectByText(page, 'select[name="State"]', n.state);
+    await _safeType(page, ['input[name="Zip"]', 'input[name="ZipCode"]'], n.postal);
+    await _safeType(page, ['input[name="Phone"]'], n.phone);
+    await _safeType(page, ['input[name="Email"]'], n.citations_email);
+    await _safeType(page, ['input[name="Website"]', 'input[name="Url"]'], n.website);
+    await _safeType(page, ['textarea[name="Description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to GlobalSpec/Engineering360" };
+  },
+
+  manufacturingnet: async (page, n) => {
+    // Manufacturing.net supplier form varies. Best-effort field map.
+    await page.goto(DIRECTORIES.manufacturingnet.url + "advertise", { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="company"]'], n.name);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="message"]', 'textarea[name="description"]'],
+      `Please list B&R Productions in your supplier directory. ${n.desc_500}`);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Manufacturing.net contact form; expect editorial review" };
+  },
+
+  productionmachining: async (page, n) => {
+    await page.goto(DIRECTORIES.productionmachining.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    // ProductionMachining is a Gardner Business Media property — likely
+    // uses their shared directory form. Try common Gardner selectors.
+    await _safeType(page, ['input[name="companyName"]', '#companyName'], n.name);
+    await _safeType(page, ['input[name="address1"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]', 'input[name="url"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to ProductionMachining directory" };
+  },
+
+  jobshop: async (page, n) => {
+    // Jobshop.com uses a "Contact Us" style form for listings.
+    await page.goto(DIRECTORIES.jobshop.url + "contact", { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="name"]'], "B&R Productions");
+    await _safeType(page, ['input[name="company"]'], n.name);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['textarea[name="message"]', 'textarea[name="comments"]'],
+      `Please add B&R Productions to Jobshop.com. ${n.desc_500}`);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Jobshop.com contact form; expect editorial review" };
+  },
+
+  manta: async (page, n) => {
+    // Manta requires account creation. Skip if signup wall present.
+    await page.goto("https://www.manta.com/business/add-a-business", { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    if ((await page.content()).toLowerCase().includes("sign in") ||
+        (await page.content()).toLowerCase().includes("create account")) {
+      return { ok: false, captcha: true, error: "Manta requires account signup — manual submit" };
+    }
+    await _safeType(page, ['input[name="business_name"]', 'input[name="companyName"]'], n.name);
+    await _safeType(page, ['input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to Manta" };
+  },
+
+  hotfrog: async (page, n) => {
+    await page.goto(DIRECTORIES.hotfrog.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="companyName"]', 'input[name="company_name"]'], n.name);
+    await _safeType(page, ['input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]', 'input[name="postcode"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]', 'textarea[name="about"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to Hotfrog" };
+  },
+
+  brownbook: async (page, n) => {
+    await page.goto(DIRECTORIES.brownbook.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="business_name"]', 'input[name="name"]'], n.name);
+    await _safeType(page, ['input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _safeType(page, ['input[name="state"]'], n.state);
+    await _safeType(page, ['input[name="postal"]', 'input[name="zip"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]', 'input[name="url"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to Brownbook" };
+  },
+
+  merchantcircle: async (page, n) => {
+    await page.goto(DIRECTORIES.merchantcircle.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    if ((await page.content()).toLowerCase().includes("sign up") &&
+        !(await page.$('input[name="business_name"]'))) {
+      return { ok: false, captcha: true, error: "MerchantCircle requires signup — manual" };
+    }
+    await _safeType(page, ['input[name="business_name"]', 'input[name="company"]'], n.name);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]'], n.postal);
+    await _safeType(page, ['input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to MerchantCircle" };
+  },
+
+  cylex: async (page, n) => {
+    await page.goto(DIRECTORIES.cylex.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="companyname"]', 'input[name="name"]'], n.name);
+    await _safeType(page, ['input[name="street"]', 'input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _safeType(page, ['input[name="state"]'], n.state);
+    await _safeType(page, ['input[name="zip"]', 'input[name="postal"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="url"]', 'input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]', 'textarea[name="about"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to Cylex/US-Info" };
+  },
+
+  showmelocal: async (page, n) => {
+    await page.goto(DIRECTORIES.showmelocal.url, { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="companyName"]', 'input[name="business_name"]'], n.name);
+    await _safeType(page, ['input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to ShowMeLocal" };
+  },
+
+  localdotcom: async (page, n) => {
+    await page.goto(DIRECTORIES.localdotcom.url + "add-business", { waitUntil: "networkidle0", timeout: 45000 });
+    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    await _safeType(page, ['input[name="businessName"]', 'input[name="name"]'], n.name);
+    await _safeType(page, ['input[name="address"]'], n.street);
+    await _safeType(page, ['input[name="city"]'], n.city);
+    await _selectByText(page, 'select[name="state"]', n.state);
+    await _safeType(page, ['input[name="zip"]'], n.postal);
+    await _safeType(page, ['input[name="phone"]'], n.phone);
+    await _safeType(page, ['input[name="email"]'], n.citations_email);
+    await _safeType(page, ['input[name="website"]'], n.website);
+    await _safeType(page, ['textarea[name="description"]'], n.desc_500);
+    const submitted = await _safeClick(page, ['button[type="submit"]', 'input[type="submit"]']);
+    if (!submitted) return { ok: false, error: "submit button not found" };
+    return { ok: true, notes: "Auto-submitted to Local.com" };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Inbound email handler — Cloudflare Email Routing → this Worker.
+// Parses the message, extracts verification links, auto-clicks them if the
+// link's hostname matches a known directory pattern.
+// ---------------------------------------------------------------------------
+async function inboundEmail(message, env, ctx) {
+  try {
+    const raw = await new Response(message.raw).text();
+    const from = message.from || "";
+    const subject = message.headers.get("subject") || "";
+
+    // Extract verification URLs — any absolute http(s) link
+    const links = Array.from(raw.matchAll(/https?:\/\/[^\s"<>]+/g)).map(m => m[0]);
+
+    // Only auto-click links matching a known directory's domain
+    const knownHosts = Object.values(DIRECTORIES).map(d => {
+      try { return new URL(d.url).hostname.replace(/^www\./, ""); } catch { return ""; }
+    }).filter(Boolean);
+
+    const clicked = [];
+    for (const link of links) {
+      let host = "";
+      try { host = new URL(link).hostname.replace(/^www\./, ""); } catch { continue; }
+      const match = knownHosts.find(h => host === h || host.endsWith("." + h));
+      if (!match) continue;
+      // Skip obviously non-verification links
+      if (/unsubscribe|opt.?out|privacy|terms/i.test(link)) continue;
+      // Only click links that look like verification/confirm URLs
+      if (!/verify|confirm|activate|validate|approve|opt.?in|register/i.test(link)) continue;
+
+      try {
+        const r = await fetch(link, { method: "GET", redirect: "follow" });
+        clicked.push({ link, status: r.status });
+        // Attempt to update the matching directory's record
+        const slug = Object.entries(DIRECTORIES).find(([, d]) => {
+          try { return new URL(d.url).hostname.replace(/^www\./, "").endsWith(match); }
+          catch { return false; }
+        });
+        if (slug && env.LEADS_KV) {
+          const rec = await _loadCit(env, slug[0]);
+          if (rec) {
+            rec.status = "verified";
+            rec.verified_at = new Date().toISOString();
+            rec.verification_url = link;
+            rec.notes = (rec.notes || "") + ` Auto-verified via inbound email from ${from}.`;
+            await _saveCit(env, rec);
+          }
+        }
+      } catch (e) {
+        clicked.push({ link, error: (e && e.message) || String(e) });
+      }
+    }
+
+    // Log the inbound email itself
+    if (env.LEADS_KV) {
+      const key = `email:${Date.now()}:${Math.floor(Math.random() * 1e6).toString(36)}`;
+      await env.LEADS_KV.put(key, JSON.stringify({
+        from, subject,
+        received_at: new Date().toISOString(),
+        links_found: links.length,
+        auto_clicked: clicked,
+      }), { expirationTtl: 60 * 60 * 24 * 90 });
+    }
+
+    // Optionally forward the raw message on to sales@ so a human sees it
+    if (message.forward && env.INBOUND_FORWARD_TO) {
+      await message.forward(env.INBOUND_FORWARD_TO);
+    }
+  } catch (e) {
+    console.log("inboundEmail error", (e && e.message) || String(e));
+  }
+}
+
+// ===========================================================================
+// END CITATION SUBMISSION STACK
+// ===========================================================================
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -1180,6 +1862,12 @@ export default {
     if (p === "/dashboard/api/ga4"          && request.method === "GET") return endpointGa4(request, env);
     if (p === "/dashboard/api/bing"         && request.method === "GET") return endpointBing(request, env);
     if (p === "/dashboard/api/cf-analytics" && request.method === "GET") return endpointCfAnalytics(request, env);
+
+    // ---- Citation submission stack (Phase 2) --------------------------------
+    if (p === "/admin/citations/status" && request.method === "GET")    return citationsStatus(request, env);
+    if (p === "/admin/citations/submit" && request.method === "POST")   return citationsSubmit(request, env, ctx);
+    if (p === "/admin/citations/retry"  && request.method === "POST")   return citationsRetry(request, env, ctx);
+    if (p === "/dashboard/api/citations" && request.method === "GET")   return citationsForDashboard(request, env);
     // Log telemetry (AI bot + AI referrer + page views) — async, doesn't
     // delay the response.
     ctx.waitUntil(logTelemetry(request, env, url).catch(() => {}));
@@ -1189,5 +1877,12 @@ export default {
   async scheduled(event, env, ctx) {
     // Weekly Monday lead digest.
     ctx.waitUntil(sendWeeklyDigest(env));
+  },
+  // Cloudflare Email Routing → route to Worker with `email` handler.
+  // Handles inbound verification emails from directory submissions —
+  // parses the message, extracts URLs, auto-clicks any that match a known
+  // directory hostname and look like verification links.
+  async email(message, env, ctx) {
+    ctx.waitUntil(inboundEmail(message, env, ctx));
   },
 };

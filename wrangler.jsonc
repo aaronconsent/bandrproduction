@@ -20,5 +20,31 @@
   "triggers": {
     // Monday 13:00 UTC ≈ 08:00 America/Chicago — weekly lead digest email
     "crons": ["0 13 * * 1"]
-  }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Citation-submission stack (Phase 2)
+  // ---------------------------------------------------------------------------
+  // Browser Rendering — hosted Chromium for Puppeteer form-filling on directory
+  // sites. Requires Workers Paid plan. Enable at:
+  //   Workers & Pages → bandrproduction → Settings → Bindings → Browser Rendering
+  // Also install: npm install --save-dev @cloudflare/puppeteer
+  "browser": {
+    "binding": "MYBROWSER"
+  },
+
+  // LEADS_KV already declared as a dashboard-bound namespace. Re-declaring here
+  // so wrangler CLI deploys don't drop the binding. Replace the id with your
+  // actual KV namespace id — copy from Workers & Pages → KV → bandrproduction-leads.
+  //
+  // "kv_namespaces": [
+  //   { "binding": "LEADS_KV", "id": "PASTE_YOUR_KV_NAMESPACE_ID_HERE" }
+  // ]
+
+  // Optional: R2 for submission screenshots (proof of submission).
+  // Create bucket first: wrangler r2 bucket create bandr-citations
+  //
+  // "r2_buckets": [
+  //   { "binding": "CITATIONS_R2", "bucket_name": "bandr-citations" }
+  // ]
 }
