@@ -38,7 +38,7 @@
   // actual KV namespace id — copy from Workers & Pages → KV → bandrproduction-leads.
   //
   // "kv_namespaces": [
-  //   { "binding": "LEADS_KV", "id": "PASTE_YOUR_KV_NAMESPACE_ID_HERE" }
+  //   { "binding": "LEADS_KV", "id": "481a9f0e2e1f450ca8d2497a584cd7c4" }
   // ]
 
   // Optional: R2 for submission screenshots (proof of submission).
