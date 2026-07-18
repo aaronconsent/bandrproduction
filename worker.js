@@ -1133,8 +1133,8 @@ async function loadCitations() {
       return '<span style="display:inline-block;padding:3px 10px;border-radius:12px;color:'+color+';background:'+bg+';font-size:12px;font-weight:600">'+status+'</span>';
     };
     var fmt = function(ts){ return ts ? new Date(ts).toLocaleString() : '—'; };
-    var rows = d.records.map(function(r){
-      var dir = d.directories[r.directory] || {};
+    var rows = (d.records || []).filter(function(r){ return r && r.directory; }).map(function(r){
+      var dir = (d.directories && d.directories[r.directory]) || {};
       var name = dir.name || r.directory;
       return '<tr>'
         + '<td><strong>'+name+'</strong><br><small><a href="'+(r.url||dir.url)+'" target="_blank" rel="noopener">'+(r.url||dir.url||'').replace(/^https?:\\/\\//,'')+'</a></small></td>'
@@ -1303,11 +1303,10 @@ function _adminAuth(request, env) {
   return { ok: true };
 }
 
-// Load or default the per-directory state record
-async function _loadCit(env, slug) {
-  if (!env.LEADS_KV) return null;
-  const raw = await env.LEADS_KV.get(`citation:${slug}`);
-  if (raw) { try { return JSON.parse(raw); } catch { return null; } }
+// Load or default the per-directory state record. Never returns null — a
+// missing/unparsable KV entry falls back to the default shape so downstream
+// renderers can safely read fields.
+function _defaultCitRecord(slug) {
   return {
     directory: slug,
     tier: DIRECTORIES[slug]?.tier || 3,
@@ -1325,6 +1324,18 @@ async function _loadCit(env, slug) {
     attempts: 0,
     last_error: null,
   };
+}
+async function _loadCit(env, slug) {
+  const def = _defaultCitRecord(slug);
+  if (!env.LEADS_KV) return def;
+  try {
+    const raw = await env.LEADS_KV.get(`citation:${slug}`);
+    if (!raw) return def;
+    const parsed = JSON.parse(raw);
+    return { ...def, ...parsed };
+  } catch {
+    return def;
+  }
 }
 async function _saveCit(env, rec) {
   if (!env.LEADS_KV) return;
@@ -1347,15 +1358,17 @@ async function citationsForDashboard(request, env) {
   if (!auth.ok) return json({ ok: false, error: auth.msg || "unauthorized" }, auth.code || 401);
   const records = [];
   for (const slug of Object.keys(DIRECTORIES)) {
-    records.push(await _loadCit(env, slug));
+    const rec = await _loadCit(env, slug);
+    // _loadCit never returns null now, but belt+suspenders — enforce shape
+    if (rec && rec.directory) records.push(rec);
   }
   const summary = {
     total:     records.length,
-    submitted: records.filter(r => r && r.status === "submitted").length,
-    verified:  records.filter(r => r && r.status === "verified").length,
-    live:      records.filter(r => r && r.status === "live").length,
-    failed:    records.filter(r => r && r.status === "failed").length,
-    pending:   records.filter(r => r && r.status === "pending").length,
+    submitted: records.filter(r => r.status === "submitted").length,
+    verified:  records.filter(r => r.status === "verified" || r.status === "live").length,
+    live:      records.filter(r => r.status === "live").length,
+    failed:    records.filter(r => r.status === "failed" || r.status === "skipped_captcha").length,
+    pending:   records.filter(r => r.status === "pending").length,
   };
   return json({ ok: true, summary, records });
 }
