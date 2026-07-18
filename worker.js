@@ -1323,6 +1323,8 @@ function _defaultCitRecord(slug) {
     method: DIRECTORIES[slug]?.automated ? "automated" : "manual",
     attempts: 0,
     last_error: null,
+    captcha_solves: 0,      // # of times 2Captcha was invoked
+    captcha_cost: 0,        // cumulative USD spent solving CAPTCHAs
   };
 }
 async function _loadCit(env, slug) {
@@ -1416,15 +1418,21 @@ async function citationsDiag(request, env) {
   const info = {
     ok: true,
     bindings: {
-      LEADS_KV:      !!env.LEADS_KV,
-      MYBROWSER:     !!env.MYBROWSER,
-      ADMIN_TOKEN:   !!env.ADMIN_TOKEN,
-      RESEND_API_KEY:!!env.RESEND_API_KEY,
+      LEADS_KV:        !!env.LEADS_KV,
+      MYBROWSER:       !!env.MYBROWSER,
+      ADMIN_TOKEN:     !!env.ADMIN_TOKEN,
+      RESEND_API_KEY:  !!env.RESEND_API_KEY,
+      CAPTCHA_API_KEY: !!env.CAPTCHA_API_KEY,
     },
     puppeteer: { available: false, error: null },
     kv_test: { read: null, write: null, roundtrip: null },
     directories_count: Object.keys(DIRECTORIES).length,
+    twocaptcha: null,
   };
+  // 2Captcha balance
+  if (env.CAPTCHA_API_KEY) {
+    info.twocaptcha = await _2captchaBalance(env);
+  }
   // Try dynamic import of puppeteer
   try {
     const p = await import("@cloudflare/puppeteer");
@@ -1504,7 +1512,7 @@ async function _submitOne(env, slug) {
 
     // Every adapter returns {ok, submission_id?, listing_url?, notes?} OR
     // {ok:false, captcha:true, error} to skip cleanly on anti-bot walls.
-    const result = await adapter(page, NAP);
+    const result = await adapter(page, NAP, env, rec);
 
     // Screenshot proof
     if (env.CITATIONS_R2 && result.ok) {
@@ -1539,10 +1547,195 @@ async function _submitOne(env, slug) {
 }
 
 // ---- Small Puppeteer helpers used across adapters ------------------------
+// Returns { type, sitekey } if a CAPTCHA is present, else null.
+// Types: "recaptcha_v2" | "recaptcha_v3" | "turnstile" | "hcaptcha" | "unknown"
 async function _detectCaptcha(page) {
-  // Cheap check: look for common CAPTCHA markers before wasting time filling.
-  const html = await page.content();
-  return /recaptcha|hcaptcha|cf-turnstile|cf-challenge|are you a robot/i.test(html);
+  try {
+    const info = await page.evaluate(() => {
+      // Turnstile (Cloudflare)
+      const t = document.querySelector('.cf-turnstile[data-sitekey], [data-sitekey][data-callback], iframe[src*="challenges.cloudflare.com"]');
+      if (t) {
+        const key = t.getAttribute("data-sitekey");
+        if (key) return { type: "turnstile", sitekey: key };
+        const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+        if (iframe) {
+          const m = iframe.src.match(/[?&]k=([^&]+)/);
+          if (m) return { type: "turnstile", sitekey: m[1] };
+        }
+      }
+      // reCAPTCHA v2
+      const r2 = document.querySelector('.g-recaptcha[data-sitekey], [data-sitekey][data-callback]');
+      if (r2) return { type: "recaptcha_v2", sitekey: r2.getAttribute("data-sitekey") };
+      const rIframe = document.querySelector('iframe[src*="google.com/recaptcha"]');
+      if (rIframe) {
+        const m = rIframe.src.match(/[?&]k=([^&]+)/);
+        if (m) return { type: "recaptcha_v2", sitekey: m[1] };
+      }
+      // reCAPTCHA v3 — invisible; look for grecaptcha.execute in scripts
+      const scripts = Array.from(document.scripts).map(s => s.textContent).join("\n");
+      const v3 = scripts.match(/grecaptcha\.execute\(['"]([^'"]+)['"]/);
+      if (v3) return { type: "recaptcha_v3", sitekey: v3[1] };
+      // hCaptcha
+      const h = document.querySelector('.h-captcha[data-sitekey], [data-hcaptcha-widget-id]');
+      if (h) return { type: "hcaptcha", sitekey: h.getAttribute("data-sitekey") };
+      // Cheap fallback — did the page HTML have any anti-bot markers?
+      if (/recaptcha|hcaptcha|cf-turnstile|cf-challenge|are you a robot/i.test(document.body.innerHTML)) {
+        return { type: "unknown", sitekey: null };
+      }
+      return null;
+    });
+    return info;
+  } catch { return null; }
+}
+
+// 2Captcha solver — sends CAPTCHA to the API, polls for result, returns token.
+// Cost per solve (as of 2026): ~$0.001-$0.003 per Turnstile/reCAPTCHA v2/hCaptcha,
+// ~$0.002 per reCAPTCHA v3. $10 credit ≈ 3000-5000 solves.
+// Returns { ok: true, token, cost, solveTimeSec } OR { ok: false, error }.
+async function _solveCaptcha(env, captcha, pageUrl) {
+  if (!env.CAPTCHA_API_KEY) {
+    return { ok: false, error: "CAPTCHA_API_KEY not set — see CITATIONS_SETUP.md" };
+  }
+  if (!captcha || !captcha.sitekey) {
+    return { ok: false, error: `unknown captcha type: ${captcha && captcha.type}` };
+  }
+
+  // Map our types to 2Captcha method params
+  const map = {
+    turnstile:    { method: "turnstile",     sitekeyField: "sitekey" },
+    recaptcha_v2: { method: "userrecaptcha", sitekeyField: "googlekey" },
+    recaptcha_v3: { method: "userrecaptcha", sitekeyField: "googlekey", extras: { version: "v3", min_score: 0.3, action: "verify" } },
+    hcaptcha:     { method: "hcaptcha",      sitekeyField: "sitekey" },
+  };
+  const cfg = map[captcha.type];
+  if (!cfg) return { ok: false, error: `unsupported captcha type: ${captcha.type}` };
+
+  // 1) Submit task
+  const submitParams = new URLSearchParams({
+    key:  env.CAPTCHA_API_KEY,
+    method: cfg.method,
+    [cfg.sitekeyField]: captcha.sitekey,
+    pageurl: pageUrl,
+    json: "1",
+  });
+  if (cfg.extras) for (const [k, v] of Object.entries(cfg.extras)) submitParams.set(k, String(v));
+
+  const startTime = Date.now();
+  let submitRes;
+  try {
+    submitRes = await fetch("https://2captcha.com/in.php?" + submitParams.toString());
+  } catch (e) {
+    return { ok: false, error: `2captcha submit network error: ${(e && e.message) || e}` };
+  }
+  const submitJson = await submitRes.json().catch(() => ({}));
+  if (submitJson.status !== 1) {
+    return { ok: false, error: `2captcha submit failed: ${submitJson.request || "unknown"}` };
+  }
+  const taskId = submitJson.request;
+
+  // 2) Poll for result — up to 120 seconds
+  const pollParams = new URLSearchParams({
+    key: env.CAPTCHA_API_KEY,
+    action: "get",
+    id: taskId,
+    json: "1",
+  });
+  await new Promise(r => setTimeout(r, 15000)); // Initial wait (recommended by 2Captcha)
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const pollRes = await fetch("https://2captcha.com/res.php?" + pollParams.toString());
+    const pollJson = await pollRes.json().catch(() => ({}));
+    if (pollJson.status === 1 && pollJson.request) {
+      const solveTimeSec = ((Date.now() - startTime) / 1000).toFixed(1);
+      // Cost typically ~$0.001-$0.003 per solve; 2Captcha returns exact cost via
+      // /res.php action=getbalance. We estimate here to keep the code simple.
+      const costEst = captcha.type === "recaptcha_v3" ? 0.002 : 0.001;
+      return {
+        ok: true,
+        token: pollJson.request,
+        type: captcha.type,
+        cost: costEst,
+        solveTimeSec: Number(solveTimeSec),
+      };
+    }
+    if (pollJson.request && pollJson.request !== "CAPCHA_NOT_READY") {
+      return { ok: false, error: `2captcha error: ${pollJson.request}` };
+    }
+    await new Promise(r => setTimeout(r, 5000)); // Poll every 5s
+  }
+  return { ok: false, error: "2captcha solve timeout (>120s)" };
+}
+
+// Inject the solved token into the page + fire the appropriate callback so
+// the form thinks the CAPTCHA was completed normally.
+async function _injectCaptchaToken(page, captcha, token) {
+  return await page.evaluate((cap, tok) => {
+    try {
+      if (cap.type === "turnstile") {
+        // Turnstile stores its token in an <input name="cf-turnstile-response">
+        // and typically fires a data-callback function on completion.
+        const input = document.querySelector('[name="cf-turnstile-response"]') ||
+                      document.querySelector('input[name*="turnstile"]');
+        if (input) { input.value = tok; }
+        const holder = document.querySelector('.cf-turnstile[data-callback]');
+        if (holder) {
+          const cb = holder.getAttribute("data-callback");
+          if (cb && typeof window[cb] === "function") window[cb](tok);
+        }
+        return true;
+      }
+      if (cap.type === "recaptcha_v2" || cap.type === "recaptcha_v3") {
+        const ta = document.querySelector('#g-recaptcha-response, textarea[name="g-recaptcha-response"]');
+        if (ta) { ta.style.display = "block"; ta.value = tok; ta.innerHTML = tok; }
+        // v2 sites often expect a callback set via data-callback
+        const holder = document.querySelector('.g-recaptcha[data-callback]');
+        if (holder) {
+          const cb = holder.getAttribute("data-callback");
+          if (cb && typeof window[cb] === "function") window[cb](tok);
+        }
+        return true;
+      }
+      if (cap.type === "hcaptcha") {
+        const inputs = document.querySelectorAll('[name="h-captcha-response"], [name="g-recaptcha-response"]');
+        inputs.forEach(i => { i.value = tok; });
+        return true;
+      }
+      return false;
+    } catch (e) { return false; }
+  }, captcha, token);
+}
+
+// Called by adapters instead of `return {ok:false, captcha:true}`.
+// Tries to solve; if it works, injects token and lets the adapter continue.
+// Returns { proceed: true } if solved, or { proceed: false, ...bailInfo } if not.
+async function _tryCaptchaOrBail(env, page, captcha, pageUrl, rec) {
+  if (!env.CAPTCHA_API_KEY) {
+    return { proceed: false, ok: false, captcha: true, error: "CAPTCHA present; no CAPTCHA_API_KEY set" };
+  }
+  const solve = await _solveCaptcha(env, captcha, pageUrl);
+  if (!solve.ok) {
+    return { proceed: false, ok: false, captcha: true, error: `2captcha: ${solve.error}` };
+  }
+  const injected = await _injectCaptchaToken(page, captcha, solve.token);
+  if (!injected) {
+    return { proceed: false, ok: false, captcha: true, error: "solved but token injection failed" };
+  }
+  // Attach solve metadata to the record so we track cost + performance
+  rec.captcha_solves = (rec.captcha_solves || 0) + 1;
+  rec.captcha_cost   = (rec.captcha_cost   || 0) + (solve.cost || 0);
+  rec.notes = ((rec.notes || "") + ` [${captcha.type} solved in ${solve.solveTimeSec}s, ~$${solve.cost}]`).trim();
+  return { proceed: true };
+}
+
+async function _2captchaBalance(env) {
+  if (!env.CAPTCHA_API_KEY) return { ok: false, error: "no key" };
+  try {
+    const r = await fetch(`https://2captcha.com/res.php?key=${env.CAPTCHA_API_KEY}&action=getbalance&json=1`);
+    const j = await r.json();
+    if (j.status === 1) return { ok: true, balance_usd: Number(j.request) };
+    return { ok: false, error: String(j.request || "unknown") };
+  } catch (e) {
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
 }
 async function _safeType(page, selectors, value) {
   // Try each selector in order; type into the first one that exists.
@@ -1591,9 +1784,9 @@ async function _selectByText(page, selector, text) {
 // helpers above so most just need to declare their field map.
 // ---------------------------------------------------------------------------
 const ADAPTERS = {
-  industrynet: async (page, n) => {
+  industrynet: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.industrynet.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="company"]', "#company"], n.name);
     await _safeType(page, ['input[name="address1"]', 'input[name="street"]'], n.street);
     await _safeType(page, ['input[name="city"]'], n.city);
@@ -1609,9 +1802,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted; expect email confirmation" };
   },
 
-  macraes: async (page, n) => {
+  macraes: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.macraes.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="CompanyName"]', 'input[name="company"]'], n.name);
     await _safeType(page, ['input[name="Contact"]', 'input[name="contact"]'], "B&R Productions Sales");
     await _safeType(page, ['input[name="Address"]'], n.street);
@@ -1628,9 +1821,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to MacRAE's Blue Book" };
   },
 
-  globalspec: async (page, n) => {
+  globalspec: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.globalspec.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="CompanyName"]', 'input[name="company"]'], n.name);
     await _safeType(page, ['input[name="StreetAddress"]', 'input[name="address"]'], n.street);
     await _safeType(page, ['input[name="City"]'], n.city);
@@ -1645,10 +1838,10 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to GlobalSpec/Engineering360" };
   },
 
-  manufacturingnet: async (page, n) => {
+  manufacturingnet: async (page, n, env, rec) => {
     // Manufacturing.net supplier form varies. Best-effort field map.
     await page.goto(DIRECTORIES.manufacturingnet.url + "advertise", { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="company"]'], n.name);
     await _safeType(page, ['input[name="phone"]'], n.phone);
     await _safeType(page, ['input[name="email"]'], n.citations_email);
@@ -1660,9 +1853,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Manufacturing.net contact form; expect editorial review" };
   },
 
-  productionmachining: async (page, n) => {
+  productionmachining: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.productionmachining.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     // ProductionMachining is a Gardner Business Media property — likely
     // uses their shared directory form. Try common Gardner selectors.
     await _safeType(page, ['input[name="companyName"]', '#companyName'], n.name);
@@ -1679,10 +1872,10 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to ProductionMachining directory" };
   },
 
-  jobshop: async (page, n) => {
+  jobshop: async (page, n, env, rec) => {
     // Jobshop.com uses a "Contact Us" style form for listings.
     await page.goto(DIRECTORIES.jobshop.url + "contact", { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="name"]'], "B&R Productions");
     await _safeType(page, ['input[name="company"]'], n.name);
     await _safeType(page, ['input[name="email"]'], n.citations_email);
@@ -1694,10 +1887,10 @@ const ADAPTERS = {
     return { ok: true, notes: "Jobshop.com contact form; expect editorial review" };
   },
 
-  manta: async (page, n) => {
+  manta: async (page, n, env, rec) => {
     // Manta requires account creation. Skip if signup wall present.
     await page.goto("https://www.manta.com/business/add-a-business", { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     if ((await page.content()).toLowerCase().includes("sign in") ||
         (await page.content()).toLowerCase().includes("create account")) {
       return { ok: false, captcha: true, error: "Manta requires account signup — manual submit" };
@@ -1716,9 +1909,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to Manta" };
   },
 
-  hotfrog: async (page, n) => {
+  hotfrog: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.hotfrog.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="companyName"]', 'input[name="company_name"]'], n.name);
     await _safeType(page, ['input[name="address"]'], n.street);
     await _safeType(page, ['input[name="city"]'], n.city);
@@ -1733,9 +1926,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to Hotfrog" };
   },
 
-  brownbook: async (page, n) => {
+  brownbook: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.brownbook.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="business_name"]', 'input[name="name"]'], n.name);
     await _safeType(page, ['input[name="address"]'], n.street);
     await _safeType(page, ['input[name="city"]'], n.city);
@@ -1750,9 +1943,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to Brownbook" };
   },
 
-  merchantcircle: async (page, n) => {
+  merchantcircle: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.merchantcircle.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     if ((await page.content()).toLowerCase().includes("sign up") &&
         !(await page.$('input[name="business_name"]'))) {
       return { ok: false, captcha: true, error: "MerchantCircle requires signup — manual" };
@@ -1771,9 +1964,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to MerchantCircle" };
   },
 
-  cylex: async (page, n) => {
+  cylex: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.cylex.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="companyname"]', 'input[name="name"]'], n.name);
     await _safeType(page, ['input[name="street"]', 'input[name="address"]'], n.street);
     await _safeType(page, ['input[name="city"]'], n.city);
@@ -1788,9 +1981,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to Cylex/US-Info" };
   },
 
-  showmelocal: async (page, n) => {
+  showmelocal: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.showmelocal.url, { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="companyName"]', 'input[name="business_name"]'], n.name);
     await _safeType(page, ['input[name="address"]'], n.street);
     await _safeType(page, ['input[name="city"]'], n.city);
@@ -1805,9 +1998,9 @@ const ADAPTERS = {
     return { ok: true, notes: "Auto-submitted to ShowMeLocal" };
   },
 
-  localdotcom: async (page, n) => {
+  localdotcom: async (page, n, env, rec) => {
     await page.goto(DIRECTORIES.localdotcom.url + "add-business", { waitUntil: "networkidle0", timeout: 45000 });
-    if (await _detectCaptcha(page)) return { ok: false, captcha: true };
+    { const cap = await _detectCaptcha(page); if (cap) { const s = await _tryCaptchaOrBail(env, page, cap, page.url(), rec); if (!s.proceed) return s; } }
     await _safeType(page, ['input[name="businessName"]', 'input[name="name"]'], n.name);
     await _safeType(page, ['input[name="address"]'], n.street);
     await _safeType(page, ['input[name="city"]'], n.city);
