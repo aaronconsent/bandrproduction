@@ -1375,6 +1375,9 @@ async function citationsForDashboard(request, env) {
 
 // POST /admin/citations/submit — kick off a submission run.
 // Body: {"slug": "industrynet"}  OR  {"all": true} for the whole batch.
+// Optional: {"sync": true}  — await the submission and return the result
+//                             synchronously (useful for debugging + single
+//                             submissions; adds ~30-60s to the HTTP response).
 async function citationsSubmit(request, env, ctx) {
   const auth = _adminAuth(request, env); if (!auth.ok) return auth.response;
   const body = await request.json().catch(() => ({}));
@@ -1382,10 +1385,67 @@ async function citationsSubmit(request, env, ctx) {
     ? Object.entries(DIRECTORIES).filter(([, d]) => d.automated === true).map(([s]) => s)
     : (body.slug ? [body.slug] : []);
   if (!slugs.length) return json({ ok: false, error: "supply slug or all:true" }, 400);
-  // Fire-and-forget: run each submission in the background so the caller
-  // gets an immediate response.
+
+  // Sync mode — useful for debugging. Awaits the batch and includes final
+  // records in the response. Only supported for single-slug submissions
+  // (batches would blow past the 30s Worker CPU limit).
+  if (body.sync && slugs.length === 1) {
+    try {
+      await _submitOne(env, slugs[0]);
+      const rec = await _loadCit(env, slugs[0]);
+      return json({ ok: true, sync: true, record: rec });
+    } catch (e) {
+      return json({
+        ok: false,
+        sync: true,
+        error: (e && e.message) || String(e),
+        stack: (e && e.stack) || null,
+      }, 500);
+    }
+  }
+
+  // Async mode — fire-and-forget; caller gets an immediate response.
   ctx.waitUntil(_runBatch(env, slugs));
   return json({ ok: true, queued: slugs });
+}
+
+// GET /admin/citations/diag — one-shot diagnostic. Shows binding state
+// without running any submission. Auth-gated.
+async function citationsDiag(request, env) {
+  const auth = _adminAuth(request, env); if (!auth.ok) return auth.response;
+  const info = {
+    ok: true,
+    bindings: {
+      LEADS_KV:      !!env.LEADS_KV,
+      MYBROWSER:     !!env.MYBROWSER,
+      ADMIN_TOKEN:   !!env.ADMIN_TOKEN,
+      RESEND_API_KEY:!!env.RESEND_API_KEY,
+    },
+    puppeteer: { available: false, error: null },
+    kv_test: { read: null, write: null, roundtrip: null },
+    directories_count: Object.keys(DIRECTORIES).length,
+  };
+  // Try dynamic import of puppeteer
+  try {
+    const p = await import("@cloudflare/puppeteer");
+    info.puppeteer.available = !!(p && (p.default || p.launch));
+  } catch (e) {
+    info.puppeteer.error = (e && e.message) || String(e);
+  }
+  // KV round-trip
+  if (env.LEADS_KV) {
+    const key = "diag:" + Date.now();
+    try {
+      await env.LEADS_KV.put(key, "hello");
+      info.kv_test.write = "ok";
+      info.kv_test.read = await env.LEADS_KV.get(key);
+      info.kv_test.roundtrip = (info.kv_test.read === "hello");
+      await env.LEADS_KV.delete(key);
+    } catch (e) {
+      info.kv_test.error = (e && e.message) || String(e);
+    }
+  }
+  return json(info);
 }
 
 // POST /admin/citations/retry {"slug": "industrynet"} — reset + resubmit
@@ -1880,6 +1940,7 @@ export default {
     if (p === "/admin/citations/status" && request.method === "GET")    return citationsStatus(request, env);
     if (p === "/admin/citations/submit" && request.method === "POST")   return citationsSubmit(request, env, ctx);
     if (p === "/admin/citations/retry"  && request.method === "POST")   return citationsRetry(request, env, ctx);
+    if (p === "/admin/citations/diag"   && request.method === "GET")    return citationsDiag(request, env);
     if (p === "/dashboard/api/citations" && request.method === "GET")   return citationsForDashboard(request, env);
     // Log telemetry (AI bot + AI referrer + page views) — async, doesn't
     // delay the response.
