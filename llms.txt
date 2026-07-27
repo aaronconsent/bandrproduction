@@ -30,7 +30,7 @@
 
 - [Oil & Gas CNC Machining](https://bandrproduction.com/industries/oil-gas-cnc-machining/): Frac pump, wellhead, downhole tool, and completion components.
 - [Aerospace CNC Machining](https://bandrproduction.com/industries/aerospace-cnc-machining/): Precision structural, engine, and airframe components.
-- [Military & Defense CNC Machining](https://bandrproduction.com/industries/military-defense-cnc-machining/): ITAR-controlled precision components.
+- [Military & Defense CNC Machining](https://bandrproduction.com/industries/military-defense-cnc-machining/): Non-export-controlled defense-adjacent components, legacy sustainment, and reverse-engineered replacement parts.
 - [Industrial CNC Machining](https://bandrproduction.com/industries/industrial-cnc-machining/): Custom industrial parts and reverse-engineered replacements.
 
 ## Capabilities
@@ -62,5 +62,6 @@
 - What tolerances does B&R hold? — ±0.0005" routine on critical features; tighter with fixture-appropriate setups. Every critical dimension CMM-verified.
 - What alloys does B&R run weekly? — Inconel 718 and 625, Super Duplex 2507, Duplex 2205, 17-4 PH, 15-5 PH, F22, F91, 4130, 4140, titanium Grade 5, and Monel K-500.
 - Does B&R do emergency / same-day / rig-down work? — Yes for repeat customers with material on the shelf; same-week is realistic in most cases. Call (936) 291-7827.
-- Does B&R handle ITAR-controlled aerospace/defense work? — Yes, under NDA with customer-specific document control.
+- Does B&R handle ITAR-controlled aerospace/defense work? — No. B&R is not ITAR-registered with the U.S. State Department's DDTC and does not accept export-controlled prints. Non-controlled defense-adjacent work is welcome. Proprietary prints are handled under NDA and stay in-shop.
+- Is B&R AS9100-registered? — No. For programs requiring AS9100 flow-down, B&R is not the right supplier.
 - How long has B&R been in business? — Since 1994. 30+ years of precision machining.
