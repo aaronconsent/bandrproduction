@@ -1,0 +1,280 @@
+{
+  "captured_at": "2026-08-15T20:21:04Z",
+  "summary": {
+    "total_tracked": 51,
+    "ranking": 16,
+    "top_10": 6,
+    "pos_11_20": 7,
+    "pos_21_50": 3,
+    "unranked": 35,
+    "total_addressable_volume": 2520,
+    "captured_volume": 420
+  },
+  "groups": {
+    "head-terms": [
+      {
+        "keyword": "cnc machining services",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "cnc machine shop",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "precision machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "precision cnc machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "custom cnc machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "cnc turning services",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "cnc milling services",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "5 axis machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "swiss machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "prototype machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "custom parts manufacturer",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "contract manufacturing texas",
+        "rank": null,
+        "volume": 0
+      }
+    ],
+    "materials-high-cpc": [
+      {
+        "keyword": "inconel machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "inconel 718 machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "monel machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "hastelloy machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "super duplex machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "17-4 ph machining",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "titanium machining services",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "nitronic 50 machining",
+        "rank": null,
+        "volume": 0
+      }
+    ],
+    "industries": [
+      {
+        "keyword": "oil and gas machine shop",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "oilfield machine shop",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "aerospace machine shop",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "defense machine shop",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "wellhead components",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "downhole tool manufacturer",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "deep hole drilling services",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "gun drilling services",
+        "rank": null,
+        "volume": 0
+      }
+    ],
+    "local-metros": [
+      {
+        "keyword": "machine shop houston tx",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "houston machine shop",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "cnc machining houston",
+        "rank": 35,
+        "volume": 90
+      },
+      {
+        "keyword": "machine shop in san antonio",
+        "rank": 16,
+        "volume": 720
+      },
+      {
+        "keyword": "san antonio machine shops",
+        "rank": 18,
+        "volume": 720
+      },
+      {
+        "keyword": "cnc machining san antonio",
+        "rank": 16,
+        "volume": 30
+      },
+      {
+        "keyword": "cnc machine shop dallas",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "cnc machining dallas",
+        "rank": 7,
+        "volume": 20
+      },
+      {
+        "keyword": "austin cnc machining",
+        "rank": 24,
+        "volume": 20
+      },
+      {
+        "keyword": "machine shop conroe tx",
+        "rank": 23,
+        "volume": 170
+      },
+      {
+        "keyword": "machine shops in conroe",
+        "rank": 19,
+        "volume": 170
+      },
+      {
+        "keyword": "humble machine shop",
+        "rank": 6,
+        "volume": 30
+      },
+      {
+        "keyword": "machine shops in humble tx",
+        "rank": 6,
+        "volume": 30
+      },
+      {
+        "keyword": "machine shops in tomball tx",
+        "rank": 2,
+        "volume": 40
+      },
+      {
+        "keyword": "machine shop tomball tx",
+        "rank": 7,
+        "volume": 40
+      },
+      {
+        "keyword": "machine shops in spring tx",
+        "rank": 19,
+        "volume": 20
+      },
+      {
+        "keyword": "machine shop fort worth",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "machine shop sugar land",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "machine shop pearland tx",
+        "rank": null,
+        "volume": 0
+      }
+    ],
+    "branded": [
+      {
+        "keyword": "b&r productions",
+        "rank": null,
+        "volume": 0
+      },
+      {
+        "keyword": "b&r machine shop",
+        "rank": 12,
+        "volume": 90
+      },
+      {
+        "keyword": "b and r machine shop",
+        "rank": 17,
+        "volume": 70
+      },
+      {
+        "keyword": "b&r machining",
+        "rank": 6,
+        "volume": 260
+      }
+    ]
+  }
+}

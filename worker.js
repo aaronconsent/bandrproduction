@@ -2111,10 +2111,35 @@ async function inboundEmail(message, env, ctx) {
 // END CITATION SUBMISSION STACK
 // ===========================================================================
 
+// Legacy blog/category URLs that 404 today but still carry external
+// backlinks (found via DataForSEO backlink audit). Permanent 301s to the
+// closest live equivalent so that link equity isn't lost. Keyed without a
+// trailing slash; matched against the path with any trailing slash
+// stripped, so both /foo and /foo/ hit the same entry.
+const LEGACY_REDIRECTS = {
+  "/blog/the-role-of-cnc-machining-in-the-oil-and-gas-industry--why-precision-matters": "/industries/oil-gas-cnc-machining/",
+  "/blog/understanding-cnc-machining--a-guide-for-the-oil---gas-industry": "/industries/oil-gas-cnc-machining/",
+  "/blog/expert-insights--material-selection-for-cnc-machining-in-defense-applications": "/industries/military-defense-cnc-machining/",
+  "/blog/how-to-ensure-precision-in-aerospace-cnc-machining": "/industries/aerospace-cnc-machining/",
+  "/blog/custom-machined-parts--how-b-r-productions-ensures-quality-and-precision": "/",
+  "/blog/comparing-cnc-machine-shops--what-sets-b-r-productions-apart": "/about-us/",
+  "/aerospace": "/industries/aerospace-cnc-machining/",
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
+    // Legacy-URL 301s (Phase 5 SEO fix) — run this before anything else so
+    // it short-circuits both the trailing-slash canonicalizer below and the
+    // static-asset lookup that would otherwise 404.
+    {
+      const bare = p.endsWith("/") && p !== "/" ? p.slice(0, -1) : p;
+      const dest = LEGACY_REDIRECTS[bare];
+      if (dest) {
+        return Response.redirect(url.origin + dest + url.search, 301);
+      }
+    }
     // Trailing-slash canonicalization: our sitemap uses trailing slashes on
     // directory-style URLs, but Google/GA4 was seeing both /foo and /foo/ as
     // distinct pages (splits link equity + analytics). 301-redirect the

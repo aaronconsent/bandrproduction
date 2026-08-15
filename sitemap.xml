@@ -9,6 +9,7 @@
   <url><loc>https://bandrproduction.com/areas/clear-lake-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/conroe-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/dallas-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/areas/fort-worth-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/galveston-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/houston-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/humble-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
@@ -17,16 +18,22 @@
   <url><loc>https://bandrproduction.com/areas/league-city-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/new-waverly-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/north-houston-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/areas/pearland-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/san-antonio-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/spring-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/areas/sugar-land-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/the-woodlands-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/tomball-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/areas/willis-cnc-machine-shop/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/capabilities/5-axis-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/capabilities/cnc-machining-services/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/cnc-milling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/cnc-turning/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/manual-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/capabilities/manual-milling/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/capabilities/precision-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/capabilities/swiss-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/faq/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/guides/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/guides/17-4-ph-machining-guide/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
@@ -114,6 +121,7 @@
   <url><loc>https://bandrproduction.com/services/emergency-cnc-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/frac-pump-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/inconel-machining-texas/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://bandrproduction.com/services/prototype-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/subsea-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/valve-component-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://bandrproduction.com/services/wellhead-component-machining/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
