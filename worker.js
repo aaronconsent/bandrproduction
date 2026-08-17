@@ -2632,7 +2632,7 @@ export default {
     if (p === "/admin/citations/build" && request.method === "GET") {
       return json({
         ok: true,
-        build_marker: "BUILD-v5-2026-07-18-23-20",
+        build_marker: "BUILD-v6-2026-08-17-heyaaronmarketing",
         deployed_at: new Date().toISOString(),
         env_git_sha: env.CF_PAGES_COMMIT_SHA || null,
       });
