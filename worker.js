@@ -299,6 +299,14 @@ async function sendWeeklyDigest(env) {
     }
   }
 
+  // ---- Rank snapshot deltas ----
+  try {
+    const rankLines = await rankDigestLines(env);
+    for (const l of rankLines) lines.push(l);
+  } catch (e) {
+    console.log("digest rank section err", e && e.message);
+  }
+
   lines.push("");
   lines.push("Full site: https://bandrproduction.com");
   lines.push("Quote form: https://bandrproduction.com/about-us/get-a-quote/");
@@ -317,6 +325,202 @@ async function sendWeeklyDigest(env) {
       text: lines.join("\n"),
     }),
   }).catch((e) => console.log("digest send failed", e && e.message));
+}
+
+// ---------------------------------------------------------------------------
+// Rank snapshot — weekly DataForSEO pull for the tracked-keyword universe.
+// Runs on the same Monday cron as sendWeeklyDigest. Requires env secrets:
+//   DATAFORSEO_LOGIN, DATAFORSEO_PASSWORD  (Cloudflare Dashboard → Secrets)
+// Writes to LEADS_KV under `rank_snapshot:latest` + `rank_snapshot:YYYY-MM-DD`.
+// Same grouping/keywords as local rank_tracker.py — keep the two in sync when
+// updating.
+// ---------------------------------------------------------------------------
+
+const RANK_KEYWORD_GROUPS = {
+  "head-terms": [
+    "cnc machining services", "cnc machine shop", "precision machining",
+    "precision cnc machining", "custom cnc machining", "cnc turning services",
+    "cnc milling services", "5 axis machining", "swiss machining",
+    "prototype machining", "custom parts manufacturer", "contract manufacturing texas",
+  ],
+  "materials-high-cpc": [
+    "inconel machining", "inconel 718 machining", "monel machining",
+    "hastelloy machining", "super duplex machining", "17-4 ph machining",
+    "titanium machining services", "nitronic 50 machining",
+  ],
+  "industries": [
+    "oil and gas machine shop", "oilfield machine shop", "aerospace machine shop",
+    "defense machine shop", "wellhead components", "downhole tool manufacturer",
+    "deep hole drilling services", "gun drilling services",
+  ],
+  "local-metros": [
+    "machine shop houston tx", "houston machine shop", "cnc machining houston",
+    "machine shop in san antonio", "san antonio machine shops", "cnc machining san antonio",
+    "cnc machine shop dallas", "cnc machining dallas", "austin cnc machining",
+    "machine shop conroe tx", "machine shops in conroe", "humble machine shop",
+    "machine shops in humble tx", "machine shops in tomball tx", "machine shop tomball tx",
+    "machine shops in spring tx", "machine shop fort worth", "machine shop sugar land",
+    "machine shop pearland tx",
+  ],
+  "branded": [
+    "b&r productions", "b&r machine shop", "b and r machine shop", "b&r machining",
+  ],
+};
+
+async function fetchAndSnapshotRanks(env) {
+  if (!env.DATAFORSEO_LOGIN || !env.DATAFORSEO_PASSWORD) {
+    console.log("rank snapshot skipped: DATAFORSEO_LOGIN/PASSWORD not set");
+    return null;
+  }
+  if (!env.LEADS_KV) {
+    console.log("rank snapshot skipped: LEADS_KV not bound");
+    return null;
+  }
+  const auth = "Basic " + btoa(`${env.DATAFORSEO_LOGIN}:${env.DATAFORSEO_PASSWORD}`);
+  let items = [];
+  try {
+    const r = await fetch("https://api.dataforseo.com/v3/dataforseo_labs/google/ranked_keywords/live", {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify([{
+        target: "bandrproduction.com",
+        location_code: 2840,
+        language_code: "en",
+        limit: 700,
+        filters: [["ranked_serp_element.serp_item.rank_group", "<=", 100]],
+      }]),
+    });
+    const data = await r.json();
+    items = data?.tasks?.[0]?.result?.[0]?.items || [];
+  } catch (e) {
+    console.log("rank snapshot fetch failed", e && e.message);
+    return null;
+  }
+
+  const byKw = {};
+  for (const it of items) {
+    const kw = String(it?.keyword_data?.keyword || "").toLowerCase();
+    if (!kw) continue;
+    const se = it?.ranked_serp_element?.serp_item || {};
+    const ki = it?.keyword_data?.keyword_info || {};
+    byKw[kw] = {
+      rank: se.rank_group,
+      url: se.url,
+      volume: ki.search_volume || 0,
+      cpc: Math.round((ki.cpc || 0) * 100) / 100,
+    };
+  }
+
+  const snapshot = {
+    captured_at: new Date().toISOString(),
+    target: "bandrproduction.com",
+    groups: {},
+    summary: {},
+  };
+  let allTracked = 0, ranking = 0, top10 = 0, pos1120 = 0, addressableVol = 0, capturedVol = 0;
+  for (const [group, kws] of Object.entries(RANK_KEYWORD_GROUPS)) {
+    const rows = kws.map((kw) => {
+      const d = byKw[kw.toLowerCase()] || null;
+      const row = {
+        keyword: kw,
+        rank: d?.rank ?? null,
+        url: d?.url ?? null,
+        volume: d?.volume || 0,
+        cpc: d?.cpc || 0,
+      };
+      allTracked++;
+      addressableVol += row.volume;
+      if (row.rank != null) {
+        ranking++;
+        if (row.rank <= 10) { top10++; capturedVol += row.volume; }
+        else if (row.rank <= 20) pos1120++;
+      }
+      return row;
+    });
+    snapshot.groups[group] = rows;
+  }
+  snapshot.summary = {
+    total_tracked: allTracked,
+    ranking,
+    top_10: top10,
+    pos_11_20: pos1120,
+    unranked: allTracked - ranking,
+    total_addressable_volume: addressableVol,
+    captured_volume: capturedVol,
+  };
+
+  const date = new Date().toISOString().slice(0, 10);
+  const prevRaw = await env.LEADS_KV.get("rank_snapshot:latest");
+  if (prevRaw) {
+    // Preserve the prior "latest" under a dated key BEFORE overwriting.
+    try {
+      const prev = JSON.parse(prevRaw);
+      const prevDate = (prev.captured_at || "").slice(0, 10) || "prev";
+      await env.LEADS_KV.put(`rank_snapshot:${prevDate}`, prevRaw, {
+        expirationTtl: 60 * 60 * 24 * 365 * 2,   // 2 years
+      });
+    } catch { /* ignore */ }
+  }
+  await env.LEADS_KV.put("rank_snapshot:latest", JSON.stringify(snapshot));
+  await env.LEADS_KV.put(`rank_snapshot:${date}`, JSON.stringify(snapshot), {
+    expirationTtl: 60 * 60 * 24 * 365 * 2,
+  });
+  console.log(`rank snapshot: ${ranking}/${allTracked} tracked · top10=${top10} · pos11-20=${pos1120} · vol=${capturedVol}/${addressableVol}`);
+  return snapshot;
+}
+
+// Compute rank-delta text vs the previous snapshot for the weekly digest.
+async function rankDigestLines(env) {
+  if (!env.LEADS_KV) return [];
+  const latestRaw = await env.LEADS_KV.get("rank_snapshot:latest");
+  if (!latestRaw) return [];
+  const latest = JSON.parse(latestRaw);
+  const lines = ["", "=== Rankings (DataForSEO) ==="];
+  const s = latest.summary || {};
+  lines.push(`  Ranking: ${s.ranking || 0}/${s.total_tracked || 0}  ·  top-10: ${s.top_10 || 0}  ·  pos 11-20: ${s.pos_11_20 || 0}`);
+  lines.push(`  Volume captured: ${s.captured_volume || 0} / ${s.total_addressable_volume || 0} monthly searches`);
+
+  // Try to diff against the previous dated snapshot
+  const list = await env.LEADS_KV.list({ prefix: "rank_snapshot:", limit: 30 });
+  const dated = list.keys
+    .map(k => k.name)
+    .filter(n => n !== "rank_snapshot:latest")
+    .sort()
+    .reverse();
+  const prevKey = dated.find(k => k.split(":")[1] !== (latest.captured_at || "").slice(0, 10));
+  if (!prevKey) return lines;
+
+  const prevRaw = await env.LEADS_KV.get(prevKey);
+  if (!prevRaw) return lines;
+  let prev;
+  try { prev = JSON.parse(prevRaw); } catch { return lines; }
+  const prevRanks = {};
+  for (const rows of Object.values(prev.groups || {})) {
+    for (const r of rows) prevRanks[r.keyword] = r.rank;
+  }
+  const ups = [], downs = [];
+  for (const [group, rows] of Object.entries(latest.groups || {})) {
+    for (const r of rows) {
+      const was = prevRanks[r.keyword];
+      const now = r.rank;
+      if (was === now) continue;
+      const rec = { kw: r.keyword, group, was, now, vol: r.volume };
+      if (was == null && now != null) ups.push({ ...rec, dir: "NEW" });
+      else if (was != null && now == null) downs.push({ ...rec, dir: "LOST" });
+      else if (now < was) ups.push({ ...rec, dir: "UP" });
+      else downs.push({ ...rec, dir: "DOWN" });
+    }
+  }
+  ups.sort((a, b) => (b.vol || 0) - (a.vol || 0));
+  downs.sort((a, b) => (b.vol || 0) - (a.vol || 0));
+  lines.push(`  vs ${prevKey.split(":")[1]}: ${ups.length} up · ${downs.length} down`);
+  for (const u of ups.slice(0, 6)) {
+    lines.push(`    ↑ ${u.kw} — ${u.was || "—"} → ${u.now}  (vol ${u.vol})`);
+  }
+  for (const d of downs.slice(0, 4)) {
+    lines.push(`    ↓ ${d.kw} — ${d.was} → ${d.now || "—"}  (vol ${d.vol})`);
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -862,6 +1066,7 @@ small{color:var(--muted)}
     <div class="tab active" data-panel="seo">SEO</div>
     <div class="tab" data-panel="aeo">AEO</div>
     <div class="tab" data-panel="citations">Citations</div>
+    <div class="tab" data-panel="rankings">Rankings</div>
     <div class="tab" data-panel="setup">Setup</div>
   </div>
 
@@ -963,6 +1168,25 @@ small{color:var(--muted)}
     </div>
   </div>
 
+  <!-- ============ RANKINGS PANEL ============ -->
+  <div class="panel" id="panel-rankings">
+    <div class="grid">
+      <div class="card"><h3>Tracked keywords</h3><div class="big" id="rkTotal">–</div><div class="sub" id="rkAsOf">Weekly snapshot</div></div>
+      <div class="card"><h3>Ranking (top 100)</h3><div class="big" id="rkRanking" style="color:var(--brand)">–</div><div class="sub">Anywhere on the first 10 pages</div></div>
+      <div class="card"><h3>Top 10</h3><div class="big" id="rkTop10" style="color:var(--green)">–</div><div class="sub" id="rkPos1120">–</div></div>
+      <div class="card"><h3>Volume captured</h3><div class="big" id="rkVolCaptured">–</div><div class="sub" id="rkVolAddr">of addressable monthly searches</div></div>
+    </div>
+    <div class="card wide">
+      <h2>Movement since last snapshot <span id="rkPrev" style="font-weight:400;color:var(--muted);font-size:14px"></span></h2>
+      <div id="rkDeltasBox"><small>Loading…</small></div>
+    </div>
+    <div class="card wide">
+      <h2>Per-group standings</h2>
+      <div id="rkGroupsBox"><small>Loading…</small></div>
+      <p class="sub" style="margin-top:16px">Snapshot runs weekly on the Monday cron. Requires Worker secrets <code>DATAFORSEO_LOGIN</code> + <code>DATAFORSEO_PASSWORD</code>. Same keyword universe as <code>rank_tracker.py</code>.</p>
+    </div>
+  </div>
+
   <!-- ============ SETUP PANEL ============ -->
   <div class="panel" id="panel-setup">
     <div class="card wide">
@@ -984,6 +1208,7 @@ small{color:var(--muted)}
           <tr><td><code>BING_WEBMASTER_KEY</code></td><td><span id="secBing" class="badge pending">Set</span></td><td>Bing Webmaster → Settings → API Access → generate key. Powers the Bing card.</td></tr>
           <tr><td><code>GSC_SERVICE_ACCOUNT_JSON</code></td><td><span id="secGsc" class="badge pending">Set</span></td><td>GCP service account JSON key. Add the service account client_email as a User on the GSC property. Powers the GSC card.</td></tr>
           <tr><td><code>GA4_SERVICE_ACCOUNT_JSON</code> + <code>GA4_PROPERTY_ID</code></td><td><span id="secGa4" class="badge pending">Set</span></td><td>Can be the same GCP service account. Add its client_email as a User on the GA4 property. Powers the GA4 card.</td></tr>
+          <tr><td><code>DATAFORSEO_LOGIN</code> + <code>DATAFORSEO_PASSWORD</code></td><td><span id="secDfs" class="badge pending">Set</span></td><td>DataForSEO API creds — powers the Rankings tab + weekly digest rank deltas. Snapshot runs on the Monday 13:00 UTC cron; write to LEADS_KV under <code>rank_snapshot:*</code>. Manual refresh: <code>POST /admin/ranks/refresh</code> with <code>ADMIN_TOKEN</code>.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1151,11 +1376,72 @@ async function loadCitations() {
   }
 }
 
+async function loadRanks() {
+  try {
+    const r = await fetch('/dashboard/api/ranks');
+    const d = await r.json();
+    if (!d.ok) {
+      $('rkDeltasBox').innerHTML = '<small>' + (d.error || 'load failed — check DATAFORSEO_LOGIN/PASSWORD are set') + '</small>';
+      return;
+    }
+    const latest = d.latest;
+    if (!latest) {
+      $('rkDeltasBox').innerHTML = '<small>No snapshot yet. First one runs on the next Monday cron. To trigger manually: bind LEADS_KV + set DATAFORSEO_LOGIN/PASSWORD, then hit the /admin/ranks/refresh endpoint (not yet wired) or wait for cron.</small>';
+      return;
+    }
+    const s = latest.summary || {};
+    $('rkTotal').textContent = s.total_tracked || 0;
+    $('rkRanking').textContent = s.ranking || 0;
+    $('rkTop10').textContent = s.top_10 || 0;
+    $('rkPos1120').textContent = 'Pos 11-20: ' + (s.pos_11_20 || 0) + ' (near page 1)';
+    $('rkVolCaptured').textContent = (s.captured_volume || 0).toLocaleString();
+    $('rkVolAddr').textContent = 'of ' + (s.total_addressable_volume || 0).toLocaleString() + ' addressable monthly searches';
+    $('rkAsOf').textContent = 'Captured ' + (latest.captured_at || '').slice(0, 10);
+
+    // Deltas
+    if (d.prev_date) $('rkPrev').textContent = 'vs ' + d.prev_date;
+    if (!d.deltas || !d.deltas.length) {
+      $('rkDeltasBox').innerHTML = '<small>No rank changes since ' + (d.prev_date || 'previous snapshot') + '.</small>';
+    } else {
+      const arrow = { UP: '🟢 ↑', DOWN: '🔴 ↓', NEW: '✨ NEW', LOST: '❌ LOST' };
+      const rows = d.deltas.slice(0, 40).map(function(x){
+        return '<tr>'
+          + '<td>' + (arrow[x.dir] || x.dir) + '</td>'
+          + '<td>' + x.keyword + '</td>'
+          + '<td><small>' + x.group + '</small></td>'
+          + '<td>' + (x.was || '—') + '</td>'
+          + '<td><strong>' + (x.now || '—') + '</strong></td>'
+          + '<td>' + (x.volume || 0) + '</td>'
+          + '</tr>';
+      }).join('');
+      $('rkDeltasBox').innerHTML = '<table><thead><tr><th>Δ</th><th>Keyword</th><th>Group</th><th>Was</th><th>Now</th><th>Vol</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    // Per-group table
+    const groupHtml = Object.entries(latest.groups || {}).map(function(entry){
+      const group = entry[0], rows = entry[1];
+      const sorted = rows.slice().sort(function(a, b){
+        const ar = a.rank == null ? 9999 : a.rank;
+        const br = b.rank == null ? 9999 : b.rank;
+        return ar - br;
+      });
+      const trs = sorted.map(function(r){
+        return '<tr><td>' + r.keyword + '</td><td>' + (r.rank == null ? '—' : r.rank) + '</td><td>' + (r.volume || 0) + '</td><td>$' + (r.cpc || 0) + '</td><td><small>' + (r.url ? r.url.replace('https://bandrproduction.com','') : '—') + '</small></td></tr>';
+      }).join('');
+      return '<h3 style="margin-top:20px;color:var(--brand)">' + group + '</h3>'
+        + '<table><thead><tr><th>Keyword</th><th>Rank</th><th>Vol</th><th>CPC</th><th>Landing URL</th></tr></thead><tbody>' + trs + '</tbody></table>';
+    }).join('');
+    $('rkGroupsBox').innerHTML = groupHtml;
+  } catch (e) {
+    $('rkDeltasBox').innerHTML = '<small>error: ' + (e && e.message) + '</small>';
+  }
+}
+
 async function load(days) {
   days = days || 30;
   $('aeoDays').textContent = days; $('aeoDays2').textContent = days;
   const seoDays = $('seoDays').value;
-  loadGsc(seoDays); loadGa4(seoDays); loadBing(seoDays); loadCf(seoDays); loadCitations();
+  loadGsc(seoDays); loadGa4(seoDays); loadBing(seoDays); loadCf(seoDays); loadCitations(); loadRanks();
   const r = await fetch('/dashboard/api/summary?days=' + days);
   const d = await r.json();
   if (!d.ok) { alert(d.error || 'load failed'); return; }
@@ -1352,6 +1638,61 @@ async function citationsStatus(request, env) {
     out.push(await _loadCit(env, slug));
   }
   return json({ ok: true, directories: DIRECTORIES, records: out });
+}
+
+// GET /dashboard/api/ranks — latest snapshot + list of prior dated snapshots
+async function ranksForDashboard(request, env) {
+  const auth = dashboardAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.msg || "unauthorized" }, auth.code || 401);
+  if (!env.LEADS_KV) return json({ ok: false, error: "LEADS_KV not bound" });
+
+  const latestRaw = await env.LEADS_KV.get("rank_snapshot:latest");
+  let latest = null;
+  if (latestRaw) { try { latest = JSON.parse(latestRaw); } catch { /* ignore */ } }
+
+  // List dated snapshots (excluding the "latest" pointer)
+  const list = await env.LEADS_KV.list({ prefix: "rank_snapshot:", limit: 60 });
+  const history = list.keys
+    .map(k => k.name.split(":")[1])
+    .filter(d => d && d !== "latest")
+    .sort()
+    .reverse();
+
+  // Compute deltas vs the most recent PRIOR dated snapshot
+  let deltas = null, prevDate = null;
+  if (latest) {
+    const latestDate = (latest.captured_at || "").slice(0, 10);
+    prevDate = history.find(d => d !== latestDate);
+    if (prevDate) {
+      const prevRaw = await env.LEADS_KV.get(`rank_snapshot:${prevDate}`);
+      if (prevRaw) {
+        try {
+          const prev = JSON.parse(prevRaw);
+          const prevRanks = {};
+          for (const rows of Object.values(prev.groups || {})) {
+            for (const r of rows) prevRanks[r.keyword] = r.rank;
+          }
+          deltas = [];
+          for (const [group, rows] of Object.entries(latest.groups || {})) {
+            for (const r of rows) {
+              const was = prevRanks[r.keyword];
+              const now = r.rank;
+              if (was === now) continue;
+              let dir;
+              if (was == null && now != null) dir = "NEW";
+              else if (was != null && now == null) dir = "LOST";
+              else if (now < was) dir = "UP";
+              else dir = "DOWN";
+              deltas.push({ group, keyword: r.keyword, was: was ?? null, now: now ?? null, volume: r.volume || 0, dir });
+            }
+          }
+          const order = { UP: 0, NEW: 1, DOWN: 2, LOST: 3 };
+          deltas.sort((a, b) => (order[a.dir] - order[b.dir]) || ((b.volume || 0) - (a.volume || 0)));
+        } catch { /* ignore */ }
+      }
+    }
+  }
+  return json({ ok: true, latest, history, prev_date: prevDate, deltas });
 }
 
 // GET /dashboard/api/citations — read-only, cookie-auth (piggybacks dashboard)
@@ -2187,6 +2528,15 @@ export default {
     if (p === "/admin/citations/retry"  && request.method === "POST")   return citationsRetry(request, env, ctx);
     if (p === "/admin/citations/diag"   && request.method === "GET")    return citationsDiag(request, env);
     if (p === "/dashboard/api/citations" && request.method === "GET")   return citationsForDashboard(request, env);
+    if (p === "/dashboard/api/ranks"     && request.method === "GET")   return ranksForDashboard(request, env);
+    if (p === "/admin/ranks/refresh"     && request.method === "POST") {
+      const a = _adminAuth(request, env); if (!a.ok) return a.response;
+      ctx.waitUntil((async () => {
+        const snap = await fetchAndSnapshotRanks(env).catch((e) => console.log("manual snap err", e && e.message));
+        console.log("manual rank snap done", snap && snap.summary);
+      })());
+      return json({ ok: true, queued: true, note: "snapshot running in background; check /dashboard/api/ranks in ~30-60s" });
+    }
     // Log telemetry (AI bot + AI referrer + page views) — async, doesn't
     // delay the response.
     ctx.waitUntil(logTelemetry(request, env, url).catch(() => {}));
@@ -2194,8 +2544,12 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled(event, env, ctx) {
-    // Weekly Monday lead digest.
-    ctx.waitUntil(sendWeeklyDigest(env));
+    // Weekly Monday: (1) snapshot ranks first so the digest includes the new
+    // deltas, (2) send the digest.
+    ctx.waitUntil((async () => {
+      await fetchAndSnapshotRanks(env).catch((e) => console.log("rank snapshot err", e && e.message));
+      await sendWeeklyDigest(env);
+    })());
   },
   // Cloudflare Email Routing → route to Worker with `email` handler.
   // Handles inbound verification emails from directory submissions —
