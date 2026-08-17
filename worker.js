@@ -1695,6 +1695,120 @@ async function ranksForDashboard(request, env) {
   return json({ ok: true, latest, history, prev_date: prevDate, deltas });
 }
 
+// POST /admin/review-requests/generate — pull recent quote-form leads from
+// LEADS_KV, generate a filled review-request email (Template A) per lead.
+// Returns copy-pasteable text Aaron can paste into his email client. Also
+// stores per-lead "review_ask_sent_at" so we don't ask the same customer
+// again within 90 days. Requires ADMIN_TOKEN.
+// Query params:
+//   ?days=N     — pull leads from last N days (default 30, max 400)
+//   ?force=1    — ignore the 90-day dedupe and generate even if asked recently
+async function reviewRequestGenerate(request, env) {
+  const auth = _adminAuth(request, env); if (!auth.ok) return auth.response;
+  if (!env.LEADS_KV) return json({ ok: false, error: "LEADS_KV not bound" }, 400);
+  const url = new URL(request.url);
+  const days = Math.min(400, Math.max(1, parseInt(url.searchParams.get("days") || "30", 10)));
+  const force = url.searchParams.get("force") === "1";
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const skipRecent = Date.now() - 90 * 24 * 60 * 60 * 1000;
+
+  const leads = [];
+  let cursor = undefined;
+  do {
+    const list = await env.LEADS_KV.list({ prefix: "lead:", cursor, limit: 1000 });
+    for (const k of list.keys) {
+      const ts = parseInt(k.name.split(":")[1] || "0", 10);
+      if (ts < cutoff) continue;
+      const raw = await env.LEADS_KV.get(k.name);
+      if (!raw) continue;
+      try {
+        const l = JSON.parse(raw);
+        if (!l || !l.email || !l.name) continue;   // need both to personalize
+        if (!force && l.review_ask_sent_at && l.review_ask_sent_at > skipRecent) continue;
+        leads.push({ ...l, _key: k.name });
+      } catch { /* skip */ }
+    }
+    cursor = list.list_complete ? undefined : list.cursor;
+  } while (cursor);
+  leads.sort((a, b) => b.ts - a.ts);
+
+  const gbpLink = env.GBP_REVIEW_LINK || "https://g.page/r/YOUR_GBP_REVIEW_LINK_HERE/review";
+  const tpLink = "https://www.trustpilot.com/evaluate/bandrproduction.com";
+  const liLink = "https://www.linkedin.com/company/br-productions/";
+
+  const drafts = leads.map((l) => {
+    const first = (l.name || "").trim().split(/\s+/)[0] || "";
+    const jobHint = l.message
+      ? l.message.split(/\s+/).slice(0, 12).join(" ")
+      : "recent work";
+    const bodyLines = [
+      `Hey ${first},`,
+      "",
+      "Aaron here from B&R Productions.",
+      "",
+      `Wanted to say thanks again for the ${jobHint}${l.company ? ` — appreciate the trust from ${l.company}` : ""}.`,
+      "",
+      "I'll get straight to it — the way small machine shops like ours get found by new customers is reviews. Google and industry directories decide who to show first based partly on who has real customer feedback and who doesn't.",
+      "",
+      "If you have 60 seconds, would you drop us a short review on any of these?",
+      "",
+      `  • Google (biggest lever): ${gbpLink}`,
+      `  • Trustpilot: ${tpLink}`,
+      `  • LinkedIn: ${liLink}`,
+      "",
+      "Pick whichever one takes the least time. Even a single sentence helps.",
+      "",
+      "No pressure at all — I know your day is full. But if you're willing, it means a lot.",
+      "",
+      "Thanks either way, and let me know when you have the next job.",
+      "",
+      "Aaron Phillips",
+      "B&R Productions",
+      "(936) 291-7827",
+      "5909 FM 1374, New Waverly TX",
+    ];
+    const subject = `Quick favor — 60 seconds if you have it, ${first}`;
+    return {
+      to: l.email,
+      to_name: l.name,
+      company: l.company || null,
+      job_hint: jobHint,
+      lead_ts: l.ts,
+      lead_age_days: Math.round((Date.now() - l.ts) / (24 * 60 * 60 * 1000)),
+      subject,
+      body: bodyLines.join("\n"),
+      _key: l._key,
+    };
+  });
+
+  // Mark as asked (opportunistic; only when NOT in force mode — force runs are dry-runs from Aaron's perspective)
+  if (!force) {
+    for (const d of drafts) {
+      const raw = await env.LEADS_KV.get(d._key);
+      if (!raw) continue;
+      try {
+        const l = JSON.parse(raw);
+        l.review_ask_sent_at = Date.now();
+        await env.LEADS_KV.put(d._key, JSON.stringify(l), { expirationTtl: 60 * 60 * 24 * 400 });
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Strip internal keys before returning
+  const out = drafts.map(({ _key, ...rest }) => rest);
+  return json({
+    ok: true,
+    days_window: days,
+    force,
+    count: out.length,
+    gbp_link_used: gbpLink,
+    note: gbpLink.includes("YOUR_GBP_REVIEW_LINK_HERE")
+      ? "Set the GBP_REVIEW_LINK Worker env var to the real Google review shortlink (from GBP → 'Get more reviews' → Share review form)."
+      : null,
+    drafts: out,
+  });
+}
+
 // GET /dashboard/api/citations — read-only, cookie-auth (piggybacks dashboard)
 async function citationsForDashboard(request, env) {
   const auth = dashboardAuth(request, env);
@@ -2529,6 +2643,7 @@ export default {
     if (p === "/admin/citations/diag"   && request.method === "GET")    return citationsDiag(request, env);
     if (p === "/dashboard/api/citations" && request.method === "GET")   return citationsForDashboard(request, env);
     if (p === "/dashboard/api/ranks"     && request.method === "GET")   return ranksForDashboard(request, env);
+    if (p === "/admin/review-requests/generate" && request.method === "POST") return reviewRequestGenerate(request, env);
     if (p === "/admin/ranks/refresh"     && request.method === "POST") {
       const a = _adminAuth(request, env); if (!a.ok) return a.response;
       ctx.waitUntil((async () => {
